@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能旅行助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .main-container {
+            display: flex;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            height: calc(100vh - 40px);
+        }
+
+        .sidebar {
+            width: 350px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 25px;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            border-color: #667eea;
+        }
+
+        .form-group input[type="date"] {
+            cursor: pointer;
+        }
+
+        .form-actions {
+            margin-top: 25px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .info-badge {
+            background: #f0f4ff;
+            color: #667eea;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-top: 10px;
+            display: none;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .info-badge.show {
+            display: block;
+            opacity: 1;
+        }
+
+        .chat-container {
+            flex: 1;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .header .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .username {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .header button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .header button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message.assistant {
+            justify-content: flex-start;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            word-wrap: break-word;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e0e0e0;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .input-container {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        #messageInput {
+            width: 100%;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #messageInput:focus {
+            border-color: #667eea;
+        }
+
+        #sendButton {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #sendButton:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        #sendButton:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            padding: 12px 18px;
+            background: white;
+            border-radius: 18px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .loading-dots {
+            display: inline-block;
+        }
+
+        .loading-dots span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            margin: 0 2px;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading-dots span:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: scale(0);
+            }
+            40% {
+                transform: scale(1);
+            }
+        }
+
+        .welcome-message {
+            text-align: center;
+            color: #666;
+            padding: 40px 20px;
+        }
+
+        .welcome-message h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 24px;
+        }
+
+        .welcome-message p {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+
+        /* 旅行规划卡片样式 */
+        .travel-plan-card {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            animation: fadeIn 0.5s;
+        }
+
+        .plan-header {
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        .plan-header h2 {
+            color: #333;
+            font-size: 22px;
+            margin-bottom: 10px;
+        }
+
+        .plan-meta {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .plan-meta span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .plan-content {
+            color: #333;
+            line-height: 1.8;
+            font-size: 15px;
+        }
+
+        .plan-content h3 {
+            color: #667eea;
+            font-size: 18px;
+            margin: 20px 0 10px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .plan-content h3:first-child {
+            margin-top: 0;
+        }
+
+        .plan-content ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .plan-content li {
+            margin: 8px 0;
+            list-style-type: disc;
+        }
+
+        .plan-content strong {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .plan-content p {
+            margin: 10px 0;
+        }
+
+        /* 错误信息样式 */
+        .plan-content .error-message {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            color: #856404;
+        }
+
+        .plan-content .error-message h4 {
+            color: #721c24;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .plan-content .error-message ul {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+
+        .plan-content .error-message li {
+            margin: 5px 0;
+        }
+
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: #138496;
+        }
+
+        @media (max-width: 1024px) {
+            .main-container {
+                flex-direction: column;
+                height: auto;
+            }
+
+            .sidebar {
+                width: 100%;
+                max-height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <!-- 侧边栏表单 -->
+        <div class="sidebar">
+            <h2>📋 旅行信息</h2>
+            
+            <form id="travelForm">
+                <div class="form-group">
+                    <label for="departureDate">出发日期</label>
+                    <input type="date" id="departureDate" name="departureDate" value="2026-02-01">
+                </div>
+
+                <div class="form-group">
+                    <label for="returnDate">返回日期</label>
+                    <input type="date" id="returnDate" name="returnDate" value="2026-02-07">
+                </div>
+
+                <div class="form-group">
+                    <label for="departureCity">出发地</label>
+                    <input type="text" id="departureCity" name="departureCity" placeholder="例如：北京" value="北京">
+                </div>
+
+                <div class="form-group">
+                    <label for="destination">目的地</label>
+                    <input type="text" id="destination" name="destination" placeholder="例如：上海" value="上海">
+                </div>
+
+                <div class="form-group">
+                    <label for="budget">预算（元）</label>
+                    <input type="number" id="budget" name="budget" placeholder="例如：5000" min="0" value="5000">
+                </div>
+
+                <div class="form-group">
+                    <label for="hotelPreference">旅店偏好</label>
+                    <select id="hotelPreference" name="hotelPreference">
+                        <option value="">请选择</option>
+                        <option value="经济型">经济型</option>
+                        <option value="舒适型" selected>舒适型</option>
+                        <option value="豪华型">豪华型</option>
+                        <option value="民宿">民宿</option>
+                        <option value="青旅">青旅</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="transportMode">出行方式</label>
+                    <select id="transportMode" name="transportMode">
+                        <option value="">请选择</option>
+                        <option value="飞机" selected>飞机</option>
+                        <option value="高铁">高铁</option>
+                        <option value="火车">火车</option>
+                        <option value="自驾">自驾</option>
+                        <option value="大巴">大巴</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="travelStyle">旅行风格</label>
+                    <select id="travelStyle" name="travelStyle">
+                        <option value="">请选择</option>
+                        <option value="休闲游">休闲游</option>
+                        <option value="深度游">深度游</option>
+                        <option value="探险游">探险游</option>
+                        <option value="文化游" selected>文化游</option>
+                        <option value="美食游">美食游</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="interests">兴趣偏好</label>
+                    <input type="text" id="interests" name="interests" placeholder="例如：历史、文化、美食" value="历史、文化、美食">
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" onclick="applyTravelInfo()">生成旅行计划</button>
+                    <button type="button" class="btn btn-secondary" onclick="clearTravelInfo()">清空</button>
+                </div>
+            </form>
+
+            <div class="info-badge" id="infoBadge">
+                ✓ 旅行信息已应用
+            </div>
+        </div>
+
+        <!-- 聊天区域 -->
+        <div class="chat-container">
+            <div class="header">
+                <h1>🗺️ 智能旅行助手</h1>
+                <div class="user-info">
+                    <span class="username" id="usernameDisplay"></span>
+                    <button onclick="resetChat()">🔄 重置对话</button>
+                    <button onclick="logout()">🚪 登出</button>
+                </div>
+            </div>
+            
+            <div class="chat-messages" id="chatContainer">
+                <div class="welcome-message">
+                    <h2>欢迎使用智能旅行助手！</h2>
+                    <p>请先在左侧填写旅行信息，然后开始对话</p>
+                    <p>我可以帮助您：</p>
+                    <ul style="list-style: none; padding: 0;">
+                        <li>📅 规划旅行行程</li>
+                        <li>❓ 回答景点相关问题</li>
+                        <li>🎯 提供个性化推荐</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        placeholder="输入您的问题..." 
+                        onkeypress="handleKeyPress(event)"
+                    >
+                </div>
+                <button id="sendButton" onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chatContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        let travelInfo = {};
+
+        // 获取旅行信息
+        function getTravelInfo() {
+            return {
+                departureDate: document.getElementById('departureDate').value,
+                returnDate: document.getElementById('returnDate').value,
+                departureCity: document.getElementById('departureCity').value,
+                destination: document.getElementById('destination').value,
+                budget: document.getElementById('budget').value,
+                hotelPreference: document.getElementById('hotelPreference').value,
+                transportMode: document.getElementById('transportMode').value,
+                travelStyle: document.getElementById('travelStyle').value,
+                interests: document.getElementById('interests').value
+            };
+        }
+
+        // 应用旅行信息并生成规划
+        async function applyTravelInfo() {
+            console.log('应用信息按钮被点击');
+            
+            // 获取旅行信息
+            const info = getTravelInfo();
+            
+            // 验证必填字段
+            if (!info.destination) {
+                alert('请填写目的地');
+                return;
+            }
+            if (!info.departureDate || !info.returnDate) {
+                alert('请填写出发日期和返回日期');
+                return;
+            }
+            
+            // 保存到变量
+            travelInfo = info;
+            
+            // 显示加载状态
+            const badge = document.getElementById('infoBadge');
+            const applyBtn = document.querySelector('.btn-primary');
+            
+            if (badge) {
+                badge.textContent = '正在生成旅行规划...';
+                badge.style.background = '#fff3cd';
+                badge.style.color = '#856404';
+                badge.classList.add('show');
+            }
+            
+            if (applyBtn) {
+                applyBtn.disabled = true;
+                applyBtn.textContent = '生成中...';
+            }
+            
+            // 在聊天区域显示加载提示
+            showLoading();
+            
+            try {
+                // 发送请求到后端生成规划
+                const response = await fetch('/api/generate-plan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ travelInfo: info })
+                });
+                
+                const data = await response.json();
+                
+                hideLoading();
+                
+                if (response.ok) {
+                    if (data.success) {
+                        // 显示成功提示
+                        if (badge) {
+                            badge.textContent = '✓ 旅行规划已生成！';
+                            badge.style.background = '#d4edda';
+                            badge.style.color = '#155724';
+                        }
+                        
+                        // 显示规划结果
+                        displayTravelPlan(data.plan, data.travelInfo, data.days);
+                    } else {
+                        // 虽然请求成功，但生成失败（可能是API错误）
+                        if (badge) {
+                            badge.textContent = '✗ 生成失败';
+                            badge.style.background = '#f8d7da';
+                            badge.style.color = '#721c24';
+                        }
+                        
+                        // 仍然显示规划卡片，但内容显示错误信息
+                        if (data.plan) {
+                            displayTravelPlan(data.plan, data.travelInfo, data.days);
+                        } else {
+                            addMessage('生成规划失败: ' + (data.error || '未知错误'), false);
+                        }
+                    }
+                } else {
+                    // HTTP错误
+                    if (badge) {
+                        badge.textContent = '✗ ' + (data.error || '生成失败');
+                        badge.style.background = '#f8d7da';
+                        badge.style.color = '#721c24';
+                    }
+                    addMessage('生成规划失败: ' + (data.error || '未知错误'), false);
+                }
+            } catch (error) {
+                console.error('生成规划错误:', error);
+                hideLoading();
+                if (badge) {
+                    badge.textContent = '✗ 网络错误';
+                    badge.style.background = '#f8d7da';
+                    badge.style.color = '#721c24';
+                }
+                addMessage('网络错误: ' + error.message, false);
+            } finally {
+                // 恢复按钮
+                if (applyBtn) {
+                    applyBtn.disabled = false;
+                    applyBtn.textContent = '应用信息';
+                }
+                
+                // 3秒后隐藏提示
+                setTimeout(() => {
+                    if (badge) {
+                        badge.classList.remove('show');
+                        badge.style.background = '';
+                        badge.style.color = '';
+                        badge.textContent = '✓ 旅行信息已应用';
+                    }
+                }, 3000);
+            }
+        }
+        
+        // 显示旅行规划
+        function displayTravelPlan(plan, travelInfo, days) {
+            // 移除欢迎消息
+            const welcomeMsg = chatContainer.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+            
+            // 创建规划卡片
+            const planCard = document.createElement('div');
+            planCard.className = 'travel-plan-card';
+            planCard.innerHTML = `
+                <div class="plan-header">
+                    <h2>📅 ${days}天${travelInfo.destination}旅行规划</h2>
+                    <div class="plan-meta">
+                        <span>📆 ${travelInfo.departureDate} 至 ${travelInfo.returnDate}</span>
+                        ${travelInfo.departureCity ? `<span>🚩 出发地: ${travelInfo.departureCity}</span>` : ''}
+                        ${travelInfo.budget ? `<span>💰 预算: ${travelInfo.budget}元</span>` : ''}
+                        ${travelInfo.transportMode ? `<span>✈️ 出行: ${travelInfo.transportMode}</span>` : ''}
+                    </div>
+                </div>
+                <div class="plan-content">
+                    ${formatPlanContent(plan)}
+                </div>
+            `;
+            
+            // 添加到聊天容器
+            chatContainer.appendChild(planCard);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        
+        // 格式化规划内容
+        function formatPlanContent(plan) {
+            // 检查是否是错误信息
+            if (plan.includes('❌') || plan.includes('错误') || plan.includes('连接错误') || plan.includes('API')) {
+                return formatErrorMessage(plan);
+            }
+            
+            // 将文本转换为HTML，保留格式
+            let html = plan;
+            
+            // 转义HTML特殊字符（除了我们需要的格式）
+            html = html.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;');
+            
+            // 恢复换行
+            html = html.replace(/\n/g, '<br>');
+            
+            // 识别标题（以数字开头的行，如 "第1天"、"1."、"第一天"）
+            html = html.replace(/(第[一二三四五六七八九十\d]+天[^<]*|<br>)(\d+[\.、]?\s*[^<]+)(<br>)/gi, 
+                '<h3 class="plan-day-title">$2</h3>');
+            
+            // 识别列表项（以 -、•、* 开头）
+            html = html.replace(/([-•*]\s*[^<]+)(<br>)/g, '<li>$1</li>');
+            
+            // 将连续的列表项包装在ul中
+            html = html.replace(/(<li>.*?<\/li>(?:<br>)?)+/g, function(match) {
+                return '<ul class="plan-list">' + match.replace(/<br>/g, '') + '</ul>';
+            });
+            
+            // 识别粗体文本 **text**
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            
+            // 识别段落（空行分隔）
+            html = html.replace(/(<br>){2,}/g, '</p><p>');
+            html = '<p>' + html + '</p>';
+            
+            return html;
+        }
+        
+        // 格式化错误信息
+        function formatErrorMessage(errorText) {
+            let html = errorText;
+            
+            // 转义HTML
+            html = html.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;');
+            
+            // 将换行转换为<br>
+            html = html.replace(/\n/g, '<br>');
+            
+            // 识别错误标题（❌开头的行）
+            html = html.replace(/❌\s*([^<]+)(<br>)/g, '<h4>$1</h4>');
+            
+            // 识别列表项（以数字开头的行，如 "1. xxx"）
+            html = html.replace(/(\d+\.\s*[^<]+)(<br>)/g, '<li>$1</li>');
+            
+            // 将连续的列表项包装在ul中
+            html = html.replace(/(<li>.*?<\/li>(?:<br>)?)+/g, function(match) {
+                return '<ul>' + match.replace(/<br>/g, '') + '</ul>';
+            });
+            
+            // 包装在错误消息容器中
+            html = '<div class="error-message">' + html + '</div>';
+            
+            return html;
+        }
+
+        // 清空旅行信息
+        function clearTravelInfo() {
+            // 确认清空操作
+            if (!confirm('确定要清空所有旅行信息吗？')) {
+                return;
+            }
+            
+            // 重置表单
+            document.getElementById('travelForm').reset();
+            
+            // 清空存储的旅行信息变量
+            travelInfo = {};
+            
+            // 清空聊天区域中的规划卡片
+            const planCards = chatContainer.querySelectorAll('.travel-plan-card');
+            planCards.forEach(card => card.remove());
+            
+            // 显示欢迎消息（如果不存在）
+            const welcomeMsg = chatContainer.querySelector('.welcome-message');
+            if (!welcomeMsg) {
+                chatContainer.innerHTML = `
+                    <div class="welcome-message">
+                        <h2>欢迎使用智能旅行助手！</h2>
+                        <p>请先在左侧填写旅行信息，然后开始对话</p>
+                        <p>我可以帮助您：</p>
+                        <ul style="list-style: none; padding: 0;">
+                            <li>📅 规划旅行行程</li>
+                            <li>❓ 回答景点相关问题</li>
+                            <li>🎯 提供个性化推荐</li>
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            // 更新提示徽章
+            const badge = document.getElementById('infoBadge');
+            if (badge) {
+                badge.textContent = '旅行信息已清空';
+                badge.style.background = '#f8d7da';
+                badge.style.color = '#721c24';
+                badge.classList.add('show');
+                
+                // 3秒后恢复默认状态
+                setTimeout(() => {
+                    badge.classList.remove('show');
+                    badge.style.background = '';
+                    badge.style.color = '';
+                    badge.textContent = '✓ 旅行信息已应用';
+                }, 3000);
+            }
+            
+            console.log('旅行信息已清空');
+        }
+
+        // 构建包含旅行信息的消息
+        function buildMessageWithContext(userMessage) {
+            // 使用存储在travelInfo变量中的旅行信息，而不是直接从表单获取
+            // 这样可以确保消息上下文中的旅行信息与发送到后端的旅行信息一致
+            const info = travelInfo;
+            let contextMessage = userMessage;
+            
+            // 如果有旅行信息，添加到消息上下文中
+            const infoParts = [];
+            if (info.departureDate && info.returnDate) {
+                infoParts.push(`出发日期：${info.departureDate}，返回日期：${info.returnDate}`);
+            }
+            if (info.departureCity) {
+                infoParts.push(`出发地：${info.departureCity}`);
+            }
+            if (info.destination) {
+                infoParts.push(`目的地：${info.destination}`);
+            }
+            if (info.budget) {
+                infoParts.push(`预算：${info.budget}元`);
+            }
+            if (info.hotelPreference) {
+                infoParts.push(`旅店偏好：${info.hotelPreference}`);
+            }
+            if (info.transportMode) {
+                infoParts.push(`出行方式：${info.transportMode}`);
+            }
+            if (info.travelStyle) {
+                infoParts.push(`旅行风格：${info.travelStyle}`);
+            }
+            if (info.interests) {
+                infoParts.push(`兴趣偏好：${info.interests}`);
+            }
+
+            if (infoParts.length > 0) {
+                contextMessage = `[旅行信息：${infoParts.join('，')}] ${userMessage}`;
+            }
+
+            return contextMessage;
+        }
+
+        function addMessage(content, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(contentDiv);
+            chatContainer.appendChild(messageDiv);
+            
+            // 移除欢迎消息
+            const welcomeMsg = chatContainer.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+            
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function showLoading() {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading show';
+            loadingDiv.id = 'loadingIndicator';
+            loadingDiv.innerHTML = '<div class="loading-dots"><span></span><span></span><span></span></div>';
+            chatContainer.appendChild(loadingDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function hideLoading() {
+            const loading = document.getElementById('loadingIndicator');
+            if (loading) {
+                loading.remove();
+            }
+        }
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            // 检查是否有存储的旅行信息，如果没有则自动获取
+            if (Object.keys(travelInfo).length === 0) {
+                console.log('未检测到存储的旅行信息，自动从表单获取...');
+                travelInfo = getTravelInfo();
+            }
+
+            // 添加调试日志
+            console.log('发送消息前的travelInfo:', travelInfo);
+            console.log('直接从表单获取的信息:', getTravelInfo());
+
+            // 构建包含旅行信息的消息
+            const contextMessage = buildMessageWithContext(message);
+
+            // 添加用户消息（只显示原始消息）
+            addMessage(message, true);
+            messageInput.value = '';
+            
+            // 禁用输入
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            showLoading();
+
+            try {
+                // 使用存储在travelInfo变量中的旅行信息
+                const response = await fetch('/api/chat', { 
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        message: contextMessage,
+                        travelInfo: travelInfo
+                    })
+                });
+
+                // 添加调试日志
+                console.log('发送到后端的数据:', { 
+                    message: contextMessage,
+                    travelInfo: travelInfo
+                });
+
+                const data = await response.json();
+                
+                // 添加调试日志
+                console.log('从后端收到的响应:', data);
+                
+                hideLoading();
+
+                if (response.ok) {
+                    addMessage(data.response, false);
+                } else {
+                    addMessage(`错误: ${data.error || '未知错误'}`, false);
+                }
+            } catch (error) {
+                hideLoading();
+                addMessage(`网络错误: ${error.message}`, false);
+            } finally {
+                // 恢复输入
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                messageInput.focus();
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        async function resetChat() {
+            if (!confirm('确定要重置对话吗？')) return;
+
+            try {
+                const response = await fetch('/api/reset', {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    // 清空聊天界面
+                    chatContainer.innerHTML = `
+                        <div class="welcome-message">
+                            <h2>对话已重置</h2>
+                            <p>您可以开始新的对话了</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                alert('重置失败: ' + error.message);
+            }
+        }
+
+        // 检查登录状态
+        async function checkLoginStatus() {
+            try {
+                const response = await fetch('/api/user/info');
+                if (response.ok) {
+                    const data = await response.json();
+                    const usernameDisplay = document.getElementById('usernameDisplay');
+                    if (usernameDisplay) {
+                        usernameDisplay.textContent = `👤 ${data.username}`;
+                    }
+                } else {
+                    // 未登录，跳转到登录页面
+                    window.location.href = '/login';
+                    return;
+                }
+            } catch (error) {
+                console.error('检查登录状态失败:', error);
+                // 网络错误也跳转到登录页
+                window.location.href = '/login';
+                return;
+            }
+        }
+
+        // 登出
+        async function logout() {
+            if (!confirm('确定要登出吗？')) return;
+
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
+                    alert('登出失败');
+                }
+            } catch (error) {
+                alert('登出失败: ' + error.message);
+            }
+        }
+
+        // 页面加载时立即检查登录状态（在DOMContentLoaded之前）
+        checkLoginStatus();
+
+        // 页面加载时聚焦输入框
+        messageInput.focus();
+
+        // 如果有初始查询，自动发送
+        {% if initial_query %}
+        window.addEventListener('DOMContentLoaded', function() {
+            messageInput.value = '{{ initial_query }}';
+            setTimeout(() => {
+                sendMessage();
+            }, 500);
+        });
+        {% endif %}
+    </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+# 智能旅行助手配置文件
+
+# LLM配置
+llm:
+  model: "gpt-4-turbo-preview"
+  temperature: 0.7
+  max_tokens: 2000
+
+# Agent配置
+agent:
+  max_iterations: 10
+  enable_memory: true
+  verbose: true
+
+# 天气API配置（高德地图，与交通API共用同一个密钥）
+weather:
+  api_key: ""  # 在env文件中设置 AMAP_API_KEY（与交通API共用）
+  # 注册地址：https://lbs.amap.com/
+  # 免费额度：每天30万次调用（个人开发者）
+
+# 酒店API配置（携程开放平台）
+hotel:
+  api_key: ""  # 在env文件中设置 CTRIP_API_KEY
+  api_secret: ""  # 在env文件中设置 CTRIP_API_SECRET
+  # 注册地址：https://open.ctrip.com/
+  # 注意：需要商业合作，当前使用智能估算方案
+
+# 交通和天气API配置（高德地图，共用同一个密钥）
+transport:
+  api_key: ""  # 在env文件中设置 AMAP_API_KEY（同时用于交通和天气查询）
+  # 注册地址：https://lbs.amap.com/
+  # 免费额度：每天30万次调用（个人开发者）
+
+# 景点API配置（天聚数行）
+attraction:
+  api_key: ""  # 在env文件中设置 TIANAPI_KEY
+  # 注册地址：https://www.tianapi.com/
+  # 免费额度：每天100次调用（个人开发者）
+
+# 工具配置
+tools:
+  travel_planning:
+    max_days: 30
+    default_budget: 5000
+  attraction_qa:
+    cache_enabled: true
+  recommendation:
+    max_results: 10
+

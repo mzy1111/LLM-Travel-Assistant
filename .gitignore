@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 环境变量
+.env
+env
+
+# 数据文件
+data/users.json
+*.db
+*.sqlite
+
+# 日志
+*.log
+logs/
+
+# 测试文件（保留测试目录结构）
+# tests/
+
+# 文档（保留文档目录结构）
+# docs/
+
+# 脚本（保留脚本目录结构）
+# scripts/
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 向量数据库
+chroma_db/
+

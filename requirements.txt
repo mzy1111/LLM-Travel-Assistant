@@ -1,0 +1,23 @@
+# 核心依赖
+langchain==0.1.0
+langchain-openai==0.0.5
+langchain-community==0.0.20
+openai>=1.55.3,<2.0.0  # 修复 httpx proxies 参数兼容性问题，同时满足 langchain-openai 要求
+httpx==0.27.2  # 固定版本，避免 proxies 参数问题
+
+# 数据处理
+pydantic==2.6.1
+python-dotenv==1.0.1
+pyyaml==6.0.1
+
+# 工具库
+requests==2.31.0
+beautifulsoup4==4.12.3
+
+# Web框架
+flask==3.0.0
+
+# 可选：如果需要使用其他LLM
+# anthropic==0.18.1  # Claude
+# google-generativeai==0.3.2  # Gemini
+
