@@ -4,17 +4,18 @@
 
 ## 功能特性
 
-- 🤖 **智能Agent框架**：基于LangChain构建的智能对话系统
-- 🌤️ **实时天气查询**：使用高德地图API获取目的地天气信息（支持4天预报）
+- 🤖 **多Agent架构**：基于LangChain构建的智能多Agent系统，包含专门的天气、交通、酒店、景点、规划、推荐Agent
+- 🌤️ **实时天气查询**：使用高德地图API获取目的地天气信息（支持4天预报和当天实况）
 - 🏨 **酒店价格估算**：智能估算酒店价格，支持经济型、舒适型、豪华型、民宿、青旅等多种类型
-- 🚗 **交通路线规划**：支持飞机、高铁、火车、自驾、大巴等多种出行方式，提供路线、时间、费用估算
+- 🚗 **交通路线规划**：支持飞机、高铁、火车、自驾、大巴等多种出行方式，自驾使用高德地图API精准计算距离和时间
 - 🎫 **景点门票查询**：使用天聚数行API或高德地图POI API查询景点信息和门票价格
 - 🗺️ **行程规划**：根据目的地、天数、预算等自动生成详细行程，集成天气、酒店、交通、景点信息
 - ❓ **景点问答**：回答关于景点的各种问题（开放时间、门票、最佳游览时间等）
 - 🎯 **个性化推荐**：根据用户兴趣和旅行风格提供定制化推荐
 - 💬 **对话记忆**：支持多轮对话，记住上下文信息
 - 👤 **用户系统**：支持用户注册、登录，每个用户独立的会话
-- 🌐 **Web界面**：现代化的聊天界面，支持实时对话和旅行信息表单
+- 🌐 **Web界面**：现代化的聊天界面，支持实时对话和旅行信息表单，支持省市区三级联动选择
+- 🧪 **单元测试**：完整的测试套件，包括工具测试、API连接测试、Agent初始化测试
 
 ## 项目结构
 
@@ -22,19 +23,25 @@
 LLM-Travel-Assistant/
 ├── src/                      # 源代码目录
 │   ├── agent/               # Agent核心模块
-│   │   ├── travel_agent.py  # 旅行助手Agent
+│   │   ├── travel_agent.py  # 旅行助手协调Agent（多Agent架构）
+│   │   ├── specialized_agents.py  # 专门Agent（天气、交通、酒店、景点、规划、推荐）
 │   │   └── tools.py         # Agent工具定义（天气、酒店、交通、景点）
 │   ├── models/              # 数据模型
 │   │   └── user.py         # 用户模型
 │   ├── config.py            # 配置管理
 │   └── main.py              # 命令行入口
 ├── templates/               # Web模板文件
-│   ├── index.html          # 聊天界面模板
+│   ├── index.html          # 聊天界面模板（支持省市区三级联动）
 │   ├── login.html          # 登录页面
 │   └── register.html       # 注册页面
 ├── data/                    # 数据目录
 │   └── users.json          # 用户数据（Git忽略）
 ├── tests/                   # 测试文件
+│   ├── test_agent_tools.py  # 工具函数测试（使用mock）
+│   ├── test_agent_api_connection.py  # API连接和功能测试（真实API）
+│   ├── test_specialized_agents.py  # 专门Agent初始化测试
+│   ├── run_all_tests.py    # 测试运行脚本
+│   └── README.md            # 测试文档
 ├── scripts/                 # 工具脚本
 ├── docs/                    # 文档目录
 ├── app.py                   # Flask Web应用入口
@@ -159,13 +166,32 @@ python src/main.py
 
 ## 测试
 
-运行测试文件：
+### 运行所有测试
 
 ```bash
-python tests/test_config.py      # 测试配置加载
-python tests/test_import.py      # 测试模块导入
-python scripts/test_api_connection.py  # 测试API连接
+python tests/run_all_tests.py
 ```
+
+### 运行特定测试
+
+```bash
+# 工具函数测试（使用mock，不依赖API）
+python -m unittest tests.test_agent_tools
+
+# API连接和功能测试（需要配置API密钥，测试真实API）
+python -m unittest tests.test_agent_api_connection
+
+# 专门Agent初始化测试
+python -m unittest tests.test_specialized_agents
+```
+
+### 测试说明
+
+- **test_agent_tools.py**：测试工具函数的基本功能，使用mock模拟API响应
+- **test_agent_api_connection.py**：测试真实API连接和功能，验证API返回的实际数据
+- **test_specialized_agents.py**：测试各个专门Agent的初始化和创建
+
+详细测试文档请参考 [tests/README.md](tests/README.md)
 
 ## 工具脚本
 
@@ -176,12 +202,13 @@ python scripts/test_api_connection.py  # 测试API连接
 
 ## 技术栈
 
-- **LangChain**：Agent框架和工具链
+- **LangChain**：Agent框架和工具链，支持多Agent架构
 - **OpenAI API / DeepSeek API**：LLM服务
-- **高德地图API**：天气查询、路径规划
+- **高德地图API**：天气查询（4天预报+实况）、路径规划（自驾路线精准计算）
 - **天聚数行API**：景点门票查询
 - **Flask**：Web框架
 - **Python 3.8+**：开发语言
+- **unittest**：单元测试框架
 
 ## 功能说明
 
@@ -196,7 +223,7 @@ python scripts/test_api_connection.py  # 测试API连接
 - 考虑城市等级、旅游旺季/淡季等因素
 
 ### 交通路线规划
-- **自驾**：使用高德地图API获取路线、距离、时间、过路费
+- **自驾**：使用高德地图API的地址编码和路线规划API，精准计算距离、时间、过路费
 - **公共交通**：提供飞机、高铁、火车、大巴的票价和时间估算
 - 所有方式都提供费用估算和路线建议
 
@@ -211,9 +238,12 @@ python scripts/test_api_connection.py  # 测试API连接
 - [x] 项目目录整理
 - [x] 用户登录系统
 - [x] 实时天气查询功能
-- [x] 交通路线规划
+- [x] 交通路线规划（自驾精准计算）
 - [x] 景点门票查询
 - [x] 酒店价格估算
+- [x] 多Agent架构重构
+- [x] 单元测试套件
+- [x] 省市区三级联动选择
 - [ ] 支持更多LLM提供商（Claude、Gemini等）
 - [ ] 对话历史保存
 - [ ] 支持多语言
@@ -234,6 +264,73 @@ MIT License
 ## 贡献
 
 欢迎提交Issue和Pull Request！
+
+## 变更日志
+
+### 2025-01-14 - 多Agent架构重构与测试完善
+
+#### 🎯 架构重构
+- ✅ **多Agent架构**：从单一Agent重构为协调Agent + 专门Agent的架构
+  - 新增 `specialized_agents.py`，包含6个专门Agent：
+    - `WeatherAgent`：专门负责天气查询服务
+    - `TransportAgent`：专门负责交通路线规划服务
+    - `HotelAgent`：专门负责酒店价格查询服务
+    - `AttractionAgent`：专门负责景点信息查询服务
+    - `PlanningAgent`：专门负责行程规划服务
+    - `RecommendationAgent`：专门负责个性化推荐服务
+  - `TravelAgent` 重构为主协调者，根据用户意图智能路由到相应的专门Agent
+
+#### 🚀 功能增强
+- ✅ **精准距离计算**：自驾场景下使用高德地图API的地址编码和路线规划API，精准计算距离和时间（不再使用估算）
+- ✅ **省市区三级联动**：出发地和目的地支持省市区三级联动选择，提升用户体验
+- ✅ **可选字段优化**：出发地和目的地改为可选，系统可根据用户偏好智能推荐目的地
+- ✅ **默认值设置**：出发日期默认1.17，返回日期默认1.18，预算默认1000，出行方式默认自驾，旅行风格默认美食游
+
+#### 🧪 测试完善
+- ✅ **单元测试套件**：新增完整的测试框架
+  - `test_agent_tools.py`：工具函数测试（使用mock，验证工具基本功能）
+  - `test_agent_api_connection.py`：真实API连接和功能测试（验证API实际返回数据）
+  - `test_specialized_agents.py`：专门Agent初始化测试
+  - `run_all_tests.py`：一键运行所有测试
+  - `tests/README.md`：测试文档说明
+
+#### 🔧 代码优化
+- ✅ **避免重复提交**：优化前端和后端逻辑，避免表单内容重复提交到后端
+- ✅ **历史对话优化**：优化对话历史管理，避免冗余上下文
+- ✅ **错误处理增强**：改进API调用失败时的降级处理
+- ✅ **工具调用优化**：修复LangChain工具调用方式，统一使用字典参数
+
+#### 📝 文档更新
+- ✅ **README更新**：更新项目结构、功能特性、测试说明等
+- ✅ **变更日志**：新增变更日志部分，记录时间线上的重要变更
+
+### 2025-01-13 - API集成与功能优化
+
+#### 🌐 第三方API集成
+- ✅ **天气API**：从OpenWeatherMap切换到高德地图API，支持4天预报和当天实况
+- ✅ **交通API**：集成高德地图API，支持自驾路线精准计算
+- ✅ **景点API**：集成天聚数行API和高德地图POI API
+- ✅ **酒店估算**：实现智能价格估算算法（携程API需商业合作，当前使用估算）
+
+#### 🐛 Bug修复
+- ✅ **登录重定向**：修复复制标签页刷新界面不会进入登录界面的问题
+- ✅ **表单清空**：实现清空按钮的完整逻辑
+- ✅ **距离计算**：修复行程规划时距离计算不准确的问题
+
+### 2025-01-12 - 前端优化
+
+#### 🎨 界面优化
+- ✅ **表单优化**：移除"测试信息"按钮，优化表单交互
+- ✅ **日期选择**：优化日期选择器体验
+- ✅ **表单验证**：优化表单验证逻辑
+
+### 2025-01-11 - 项目初始化
+
+#### 🎉 初始版本
+- ✅ **基础架构**：Flask Web应用、LangChain Agent框架
+- ✅ **用户系统**：用户注册、登录功能
+- ✅ **基础功能**：行程规划、景点问答、个性化推荐
+- ✅ **Web界面**：现代化聊天界面
 
 ## 注意事项
 

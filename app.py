@@ -309,10 +309,7 @@ def generate_plan():
         data = request.json
         travel_info = data.get('travelInfo', {})
         
-        # 验证必填字段
-        if not travel_info.get('destination'):
-            return jsonify({'error': '目的地不能为空'}), 400
-        
+        # 验证必填字段（出发地和目的地现在是可选的）
         if not travel_info.get('departureDate') or not travel_info.get('returnDate'):
             return jsonify({'error': '出发日期和返回日期不能为空'}), 400
         
@@ -345,6 +342,7 @@ def generate_plan():
         
         # 构建规划请求
         destination = travel_info.get('destination', '')
+        departure_city = travel_info.get('departureCity', '')
         budget = travel_info.get('budget', '')
         preferences_parts = []
         
@@ -360,23 +358,38 @@ def generate_plan():
         preferences = '，'.join(preferences_parts) if preferences_parts else None
         
         # 构建用户请求，提示Agent查询所有相关信息
-        user_request = f"请为我规划一个{days}天的{destination}旅行行程"
+        if destination:
+            user_request = f"请为我规划一个{days}天的{destination}旅行行程"
+        else:
+            user_request = f"请为我规划一个{days}天的旅行行程"
+        
         if budget:
             user_request += f"，预算{budget}元"
         if preferences:
             user_request += f"，偏好：{preferences}"
         user_request += "。\n\n"
         user_request += "重要提示：\n"
-        user_request += "1. 请先使用 get_weather_info 工具查询出发日期和目的地的天气信息\n"
-        if travel_info.get('hotelPreference'):
-            user_request += "2. 请使用 get_hotel_prices 工具查询酒店价格信息，以便提供准确的预算估算\n"
-        if travel_info.get('departureCity') and travel_info.get('transportMode'):
-            user_request += f"3. 请使用 get_transport_route 工具查询从{travel_info.get('departureCity')}到{destination}的{travel_info.get('transportMode')}路线和费用\n"
-        if travel_info.get('interests'):
-            user_request += f"4. 请使用 get_attraction_ticket_prices 工具查询{destination}的景点门票价格（根据兴趣偏好：{travel_info.get('interests')}）\n"
-        user_request += "5. 然后使用 plan_travel_itinerary 工具生成详细行程，该工具会自动集成所有查询到的信息\n"
-        user_request += "6. 根据天气情况调整活动建议（如雨天推荐室内活动，晴天推荐户外活动）\n"
-        user_request += "7. 根据酒店价格、交通费用、景点门票信息调整预算分配，提供更准确的费用估算\n"
+        
+        # 如果有目的地，查询天气和景点信息
+        if destination:
+            user_request += f"1. 请先使用 get_weather_info 工具查询出发日期和{destination}的天气信息\n"
+            if travel_info.get('interests'):
+                user_request += f"2. 请使用 get_attraction_ticket_prices 工具查询{destination}的景点门票价格（根据兴趣偏好：{travel_info.get('interests')}）\n"
+        else:
+            user_request += "1. 如果用户指定了目的地，请使用 get_weather_info 工具查询天气信息\n"
+        
+        # 如果有酒店偏好，查询酒店价格
+        if travel_info.get('hotelPreference') and destination:
+            user_request += f"{'3' if destination and travel_info.get('interests') else '2'}. 请使用 get_hotel_prices 工具查询酒店价格信息，以便提供准确的预算估算\n"
+        
+        # 如果有出发地、目的地和出行方式，查询交通路线
+        if departure_city and destination and travel_info.get('transportMode'):
+            step_num = 3 if destination and (travel_info.get('interests') or travel_info.get('hotelPreference')) else 2
+            user_request += f"{step_num}. 请使用 get_transport_route 工具查询从{departure_city}到{destination}的{travel_info.get('transportMode')}路线和费用\n"
+        
+        user_request += f"{'5' if (destination and travel_info.get('interests')) or (departure_city and destination and travel_info.get('transportMode')) or travel_info.get('hotelPreference') else '2'}. 然后使用 plan_travel_itinerary 工具生成详细行程，该工具会自动集成所有查询到的信息\n"
+        user_request += f"{'6' if (destination and travel_info.get('interests')) or (departure_city and destination and travel_info.get('transportMode')) or travel_info.get('hotelPreference') else '3'}. 根据天气情况调整活动建议（如雨天推荐室内活动，晴天推荐户外活动）\n"
+        user_request += f"{'7' if (destination and travel_info.get('interests')) or (departure_city and destination and travel_info.get('transportMode')) or travel_info.get('hotelPreference') else '4'}. 根据酒店价格、交通费用、景点门票信息调整预算分配，提供更准确的费用估算\n"
         user_request += "\n请提供详细的每日行程安排，包括景点、餐饮、住宿、交通和预算分配。"
         
         # 调用Agent生成规划

@@ -302,8 +302,8 @@ def get_hotel_prices(
 
 @tool
 def plan_travel_itinerary(
-    destination: str,
     days: int,
+    destination: Optional[str] = None,
     budget: Optional[float] = None,
     preferences: Optional[str] = None,
     departure_date: Optional[str] = None,
@@ -315,10 +315,12 @@ def plan_travel_itinerary(
     session_id: Optional[str] = None
 ) -> str:
     """
-    规划旅行行程。会自动查询天气、酒店价格、交通路线和景点门票信息，提供更准确的规划。
+    规划旅行行程。会自动查询交通路线、天气、酒店价格和景点门票信息，提供更准确的规划。
+    注意：此工具会优先查询交通路线以获取准确的距离和时间信息，这是规划行程的基础。
+    目的地和出发地都是可选的，如果没有提供，将进行通用旅行规划。
     
     Args:
-        destination: 目的地城市或景点
+        destination: 目的地城市或景点（可选）
         days: 旅行天数
         budget: 预算（可选）
         preferences: 偏好说明，例如"喜欢历史文化"、"偏好自然风光"（可选）
@@ -331,58 +333,85 @@ def plan_travel_itinerary(
         session_id: 会话ID（可选，用于区分不同用户）
     
     Returns:
-        详细的行程规划提示，包含天气、酒店价格、交通路线和景点门票信息
+        详细的行程规划提示，包含交通路线（距离、时间、费用）、天气、酒店价格和景点门票信息
     """
     # 构建行程规划提示
     plan_prompt = f"""请为以下需求规划旅行行程：
 
-目的地：{destination}
+{"目的地：" + destination if destination else "目的地：未指定（请根据用户偏好推荐合适的目的地）"}
 天数：{days}天
 预算：{budget if budget else '未指定'}
 当前偏好：{preferences if preferences else '无特殊偏好'}
 """
     
-    # 如果有日期信息，查询天气
-    if departure_date:
+    # **优先查询交通路线**：这是规划行程的基础，必须获取准确的距离和时间
+    if departure_city and destination and transport_mode:
         try:
-            weather_info = get_weather_info.invoke(destination, departure_date)
+            transport_info = get_transport_route.invoke({
+                "origin": departure_city,
+                "destination": destination,
+                "transport_mode": transport_mode
+            })
+            plan_prompt += f"\n【重要】交通路线信息（距离、时间、费用）：\n{transport_info}\n"
+            plan_prompt += "\n注意：请基于上述实际距离和时间来安排行程，而不是估算。\n"
+        except Exception as e:
+            plan_prompt += f"\n警告：无法获取交通路线信息（{str(e)}），将使用估算值。\n"
+    elif departure_city and destination:
+        plan_prompt += "\n提示：已提供出发地和目的地，但缺少出行方式，无法查询准确的交通路线。建议询问用户出行方式或提供多种出行方式的建议。\n"
+    elif departure_city or destination:
+        plan_prompt += "\n提示：缺少出发地或目的地，无法查询准确的交通路线和距离。建议询问用户完整信息或提供通用建议。\n"
+    
+    # 如果有目的地和日期信息，查询天气
+    if destination and departure_date:
+        try:
+            weather_info = get_weather_info.invoke({"city": destination, "date": departure_date})
             plan_prompt += f"\n出发日天气：{weather_info}\n"
         except:
             pass
+    elif departure_date and not destination:
+        plan_prompt += "\n提示：已提供出发日期，但缺少目的地，无法查询具体天气。建议根据出发日期和季节提供一般性天气建议。\n"
     
-    # 如果有酒店偏好和日期，查询酒店价格
-    if hotel_preference and departure_date and return_date:
+    # 如果有目的地、酒店偏好和日期，查询酒店价格
+    if destination and hotel_preference and departure_date and return_date:
         try:
-            hotel_info = get_hotel_prices.invoke(destination, departure_date, return_date, hotel_preference)
+            hotel_info = get_hotel_prices.invoke({
+                "city": destination,
+                "checkin_date": departure_date,
+                "checkout_date": return_date,
+                "hotel_preference": hotel_preference
+            })
             plan_prompt += f"\n酒店价格信息：\n{hotel_info}\n"
         except:
             pass
-    
-    # 如果有出发地、目的地和出行方式，查询交通路线
-    if departure_city and transport_mode:
-        try:
-            transport_info = get_transport_route.invoke(departure_city, destination, transport_mode)
-            plan_prompt += f"\n交通路线信息：\n{transport_info}\n"
-        except:
-            pass
+    elif hotel_preference and departure_date and return_date and not destination:
+        plan_prompt += "\n提示：已提供酒店偏好和日期，但缺少目的地，无法查询具体酒店价格。建议根据酒店偏好提供一般性价格参考。\n"
     
     # 如果有目的地和兴趣偏好，查询景点门票
-    if interests:
+    if destination and interests:
         try:
-            attraction_info = get_attraction_ticket_prices.invoke(destination, None, interests)
+            attraction_info = get_attraction_ticket_prices.invoke({
+                "city": destination,
+                "attraction_name": None,
+                "interests": interests
+            })
             plan_prompt += f"\n景点门票信息：\n{attraction_info}\n"
         except:
             pass
+    elif interests and not destination:
+        plan_prompt += "\n提示：已提供兴趣偏好，但缺少目的地，无法查询具体景点门票。建议根据兴趣偏好推荐相关类型的景点。\n"
     
     plan_prompt += """
 请提供详细的每日行程安排，包括：
-1. 每日游览景点（考虑天气情况和景点门票价格）
-2. 推荐路线
-3. 餐饮建议
-4. 住宿建议（参考酒店价格信息）
-5. 交通方式（参考交通路线和费用信息）
-6. 预算分配（如提供，参考酒店价格、交通费用、景点门票信息进行合理分配）
-7. 根据天气情况的活动建议
+1. **目的地推荐**：如果用户未指定目的地，请根据用户的偏好、预算和旅行天数推荐合适的目的地
+2. **交通安排**：如果提供了出发地和目的地，基于上述查询到的实际距离、时间和费用，合理安排出发和返回的交通方式；如果未提供，请提供交通建议
+3. 每日游览景点（考虑天气情况和景点门票价格）
+4. 推荐路线（如果查询到了交通路线，考虑实际距离）
+5. 餐饮建议
+6. 住宿建议（参考酒店价格信息）
+7. 预算分配（如提供，参考交通费用、酒店价格、景点门票信息进行合理分配）
+8. 根据天气情况的活动建议
+
+**重要**：如果查询到了实际交通距离和时间，所有行程安排必须基于这些实际数据，而不是估算值。如果未查询到，请提供合理的估算和建议。
 """
     
     return plan_prompt
@@ -449,15 +478,18 @@ def get_transport_route(
 ) -> str:
     """
     获取从出发地到目的地的交通路线规划信息。包括路线、距离、时间、费用估算等。
-    使用高德地图API进行路径规划。
+    对于自驾方式，优先使用高德地图API进行精确计算（包括地理编码和路径规划），确保距离和时间准确。
+    对于其他出行方式，使用估算方案。
     
     Args:
-        origin: 出发地，例如"北京"、"北京天安门"
-        destination: 目的地，例如"上海"、"上海外滩"
+        origin: 出发地，例如"北京"、"北京天安门"、"河北省廊坊市"
+        destination: 目的地，例如"上海"、"上海外滩"、"广东省深圳市"
         transport_mode: 出行方式，例如"飞机"、"高铁"、"火车"、"自驾"、"大巴"
     
     Returns:
-        交通路线信息字符串，包括路线、距离、时间、费用估算等。如果API不可用，返回估算信息。
+        交通路线信息字符串，包括路线、距离、时间、费用估算等。
+        自驾方式：使用高德地图API精确计算实际距离、时间、过路费等。
+        其他方式：使用估算信息。
     """
     try:
         # 从配置获取API密钥（高德地图）
@@ -481,20 +513,75 @@ def get_transport_route(
 
 
 def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
-    """使用高德地图API获取自驾路线"""
+    """使用高德地图API获取自驾路线（优先使用坐标进行精确计算）"""
     try:
-        # 高德地图路径规划API
+        # 第一步：对出发地和目的地进行地理编码，获取精确坐标
+        origin_coord = None
+        destination_coord = None
+        origin_name = origin
+        destination_name = destination
+        
+        # 地理编码API
+        geo_url = "https://restapi.amap.com/v3/geocode/geo"
+        
+        # 获取出发地坐标
+        try:
+            geo_params_origin = {
+                "address": origin,
+                "key": api_key,
+                "output": "json"
+            }
+            geo_response_origin = requests.get(geo_url, params=geo_params_origin, timeout=5)
+            if geo_response_origin.status_code == 200:
+                geo_data_origin = geo_response_origin.json()
+                if geo_data_origin.get("status") == "1" and geo_data_origin.get("geocodes"):
+                    location = geo_data_origin["geocodes"][0].get("location", "")
+                    if location:
+                        origin_coord = location  # 格式：经度,纬度
+                        origin_name = geo_data_origin["geocodes"][0].get("formatted_address", origin)
+        except Exception as e:
+            # 地理编码失败，继续尝试使用地址字符串
+            pass
+        
+        # 获取目的地坐标
+        try:
+            geo_params_dest = {
+                "address": destination,
+                "key": api_key,
+                "output": "json"
+            }
+            geo_response_dest = requests.get(geo_url, params=geo_params_dest, timeout=5)
+            if geo_response_dest.status_code == 200:
+                geo_data_dest = geo_response_dest.json()
+                if geo_data_dest.get("status") == "1" and geo_data_dest.get("geocodes"):
+                    location = geo_data_dest["geocodes"][0].get("location", "")
+                    if location:
+                        destination_coord = location  # 格式：经度,纬度
+                        destination_name = geo_data_dest["geocodes"][0].get("formatted_address", destination)
+        except Exception as e:
+            # 地理编码失败，继续尝试使用地址字符串
+            pass
+        
+        # 第二步：使用高德地图路径规划API
         route_url = "https://restapi.amap.com/v3/direction/driving"
+        
+        # 优先使用坐标，如果坐标不可用则使用地址字符串
+        route_origin = origin_coord if origin_coord else origin
+        route_destination = destination_coord if destination_coord else destination
+        
         route_params = {
-            "origin": origin,
-            "destination": destination,
+            "origin": route_origin,
+            "destination": route_destination,
             "key": api_key,
             "extensions": "all"  # 返回详细信息，包括过路费
         }
         
-        route_response = requests.get(route_url, params=route_params, timeout=5)
+        route_response = requests.get(route_url, params=route_params, timeout=10)
+        
         if route_response.status_code == 200:
             route_data = route_response.json()
+            
+            # 检查API返回状态
             if route_data.get("status") == "1" and route_data.get("route"):
                 route_info = route_data["route"]
                 paths = route_info.get("paths", [])
@@ -515,10 +602,12 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
                     fuel_cost = distance_km * 0.6
                     total_cost = tolls + fuel_cost
                     
-                    result = f"{origin}到{destination}的自驾路线：\n"
-                    result += f"- 距离：{distance_km:.1f}公里\n"
+                    # 构建结果，使用格式化后的地址名称
+                    result = f"{origin_name}到{destination_name}的自驾路线（高德地图API精确计算）：\n"
+                    result += f"- 实际距离：{distance_km:.1f}公里（{distance:.0f}米）\n"
                     result += f"- 预计时间：{duration_hour:.1f}小时（{int(duration/60)}分钟）\n"
                     result += f"- 过路费：{tolls:.0f}元\n"
+                    result += f"- 收费路段距离：{toll_distance/1000:.1f}公里\n"
                     result += f"- 油费估算：{fuel_cost:.0f}元（按0.6元/公里）\n"
                     result += f"- 总费用估算：{total_cost:.0f}元\n"
                     
@@ -531,12 +620,32 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
                         result += "- 建议：短途驾驶，适合当日往返\n"
                     
                     return result
+            else:
+                # API返回错误，记录错误信息
+                error_info = route_data.get("info", "未知错误")
+                error_msg = f"高德地图API返回错误：{error_info}"
+                # 如果API返回错误，尝试使用估算
+                estimate_result = _estimate_driving_route(origin, destination)
+                return f"{error_msg}\n\n{estimate_result}"
+        else:
+            # HTTP请求失败
+            error_msg = f"高德地图API请求失败（HTTP {route_response.status_code}）"
+            estimate_result = _estimate_driving_route(origin, destination)
+            return f"{error_msg}\n\n{estimate_result}"
         
-        # API调用失败，使用估算
-        return _estimate_driving_route(origin, destination)
-        
+    except requests.exceptions.Timeout:
+        error_msg = "高德地图API请求超时"
+        estimate_result = _estimate_driving_route(origin, destination)
+        return f"{error_msg}\n\n{estimate_result}"
+    except requests.exceptions.RequestException as e:
+        error_msg = f"高德地图API网络错误：{str(e)}"
+        estimate_result = _estimate_driving_route(origin, destination)
+        return f"{error_msg}\n\n{estimate_result}"
     except Exception as e:
-        return _estimate_driving_route(origin, destination)
+        # 其他异常
+        error_msg = f"获取自驾路线时出错：{str(e)}"
+        estimate_result = _estimate_driving_route(origin, destination)
+        return f"{error_msg}\n\n{estimate_result}"
 
 
 def _estimate_driving_route(origin: str, destination: str) -> str:

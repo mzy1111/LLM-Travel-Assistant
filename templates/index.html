@@ -473,27 +473,47 @@
             <form id="travelForm">
                 <div class="form-group">
                     <label for="departureDate">出发日期</label>
-                    <input type="date" id="departureDate" name="departureDate" value="2026-02-01">
+                    <input type="date" id="departureDate" name="departureDate" value="2026-01-17">
                 </div>
 
                 <div class="form-group">
                     <label for="returnDate">返回日期</label>
-                    <input type="date" id="returnDate" name="returnDate" value="2026-02-07">
+                    <input type="date" id="returnDate" name="returnDate" value="2026-01-18">
                 </div>
 
                 <div class="form-group">
-                    <label for="departureCity">出发地</label>
-                    <input type="text" id="departureCity" name="departureCity" placeholder="例如：北京" value="北京">
+                    <label>出发地</label>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="departureProvince" name="departureProvince" style="flex: 1;" onchange="updateDepartureCity()">
+                            <option value="">请选择省</option>
+                        </select>
+                        <select id="departureCity" name="departureCity" style="flex: 1;" onchange="updateDepartureDistrict()">
+                            <option value="">请选择市</option>
+                        </select>
+                        <select id="departureDistrict" name="departureDistrict" style="flex: 1;">
+                            <option value="">请选择县</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="destination">目的地</label>
-                    <input type="text" id="destination" name="destination" placeholder="例如：上海" value="上海">
+                    <label>目的地</label>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="destinationProvince" name="destinationProvince" style="flex: 1;" onchange="updateDestinationCity()">
+                            <option value="">请选择省</option>
+                        </select>
+                        <select id="destinationCity" name="destinationCity" style="flex: 1;" onchange="updateDestinationDistrict()">
+                            <option value="">请选择市</option>
+                        </select>
+                        <select id="destinationDistrict" name="destinationDistrict" style="flex: 1;">
+                            <option value="">请选择县</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="form-group">
                     <label for="budget">预算（元）</label>
-                    <input type="number" id="budget" name="budget" placeholder="例如：5000" min="0" value="5000">
+                    <input type="number" id="budget" name="budget" placeholder="例如：5000" min="0" value="1000">
                 </div>
 
                 <div class="form-group">
@@ -512,10 +532,10 @@
                     <label for="transportMode">出行方式</label>
                     <select id="transportMode" name="transportMode">
                         <option value="">请选择</option>
-                        <option value="飞机" selected>飞机</option>
+                        <option value="飞机">飞机</option>
                         <option value="高铁">高铁</option>
                         <option value="火车">火车</option>
-                        <option value="自驾">自驾</option>
+                        <option value="自驾" selected>自驾</option>
                         <option value="大巴">大巴</option>
                     </select>
                 </div>
@@ -527,8 +547,8 @@
                         <option value="休闲游">休闲游</option>
                         <option value="深度游">深度游</option>
                         <option value="探险游">探险游</option>
-                        <option value="文化游" selected>文化游</option>
-                        <option value="美食游">美食游</option>
+                        <option value="文化游">文化游</option>
+                        <option value="美食游" selected>美食游</option>
                     </select>
                 </div>
 
@@ -592,13 +612,163 @@
         const sendButton = document.getElementById('sendButton');
         let travelInfo = {};
 
+        // 省市区数据（简化版，包含主要城市）
+        const regionData = {
+            "北京": { cities: { "北京市": { districts: ["东城区", "西城区", "朝阳区", "丰台区", "石景山区", "海淀区", "门头沟区", "房山区", "通州区", "顺义区", "昌平区", "大兴区", "怀柔区", "平谷区", "密云区", "延庆区"] } } },
+            "上海": { cities: { "上海市": { districts: ["黄浦区", "徐汇区", "长宁区", "静安区", "普陀区", "虹口区", "杨浦区", "浦东新区", "闵行区", "宝山区", "嘉定区", "金山区", "松江区", "青浦区", "奉贤区", "崇明区"] } } },
+            "广东": { cities: { "广州市": { districts: ["荔湾区", "越秀区", "海珠区", "天河区", "白云区", "黄埔区", "番禺区", "花都区", "南沙区", "从化区", "增城区"] }, "深圳市": { districts: ["罗湖区", "福田区", "南山区", "宝安区", "龙岗区", "盐田区", "龙华区", "坪山区", "光明区", "大鹏新区"] }, "珠海市": { districts: ["香洲区", "斗门区", "金湾区"] }, "佛山市": { districts: ["禅城区", "南海区", "顺德区", "三水区", "高明区"] } } },
+            "浙江": { cities: { "杭州市": { districts: ["上城区", "下城区", "江干区", "拱墅区", "西湖区", "滨江区", "萧山区", "余杭区", "富阳区", "临安区", "桐庐县", "淳安县", "建德市"] }, "宁波市": { districts: ["海曙区", "江北区", "北仑区", "镇海区", "鄞州区", "奉化区", "象山县", "宁海县", "余姚市", "慈溪市"] }, "温州市": { districts: ["鹿城区", "龙湾区", "瓯海区", "洞头区", "永嘉县", "平阳县", "苍南县", "文成县", "泰顺县", "瑞安市", "乐清市"] } } },
+            "江苏": { cities: { "南京市": { districts: ["玄武区", "秦淮区", "建邺区", "鼓楼区", "浦口区", "栖霞区", "雨花台区", "江宁区", "六合区", "溧水区", "高淳区"] }, "苏州市": { districts: ["虎丘区", "吴中区", "相城区", "姑苏区", "吴江区", "常熟市", "张家港市", "昆山市", "太仓市"] }, "无锡市": { districts: ["锡山区", "惠山区", "滨湖区", "梁溪区", "新吴区", "江阴市", "宜兴市"] } } },
+            "四川": { cities: { "成都市": { districts: ["锦江区", "青羊区", "金牛区", "武侯区", "成华区", "龙泉驿区", "青白江区", "新都区", "温江区", "双流区", "郫都区", "新津区", "金堂县", "大邑县", "蒲江县", "都江堰市", "彭州市", "邛崃市", "崇州市", "简阳市"] }, "绵阳市": { districts: ["涪城区", "游仙区", "安州区", "三台县", "盐亭县", "梓潼县", "北川羌族自治县", "平武县", "江油市"] } } },
+            "山东": { cities: { "济南市": { districts: ["历下区", "市中区", "槐荫区", "天桥区", "历城区", "长清区", "章丘区", "济阳区", "莱芜区", "钢城区", "平阴县", "商河县"] }, "青岛市": { districts: ["市南区", "市北区", "黄岛区", "崂山区", "李沧区", "城阳区", "即墨区", "胶州市", "平度市", "莱西市"] } } },
+            "湖北": { cities: { "武汉市": { districts: ["江岸区", "江汉区", "硚口区", "汉阳区", "武昌区", "青山区", "洪山区", "东西湖区", "汉南区", "蔡甸区", "江夏区", "黄陂区", "新洲区"] } } },
+            "河南": { cities: { "郑州市": { districts: ["中原区", "二七区", "管城回族区", "金水区", "上街区", "惠济区", "中牟县", "巩义市", "荥阳市", "新密市", "新郑市", "登封市"] } } },
+            "陕西": { cities: { "西安市": { districts: ["新城区", "碑林区", "莲湖区", "灞桥区", "未央区", "雁塔区", "阎良区", "临潼区", "长安区", "高陵区", "鄠邑区", "蓝田县", "周至县"] } } },
+            "湖南": { cities: { "长沙市": { districts: ["芙蓉区", "天心区", "岳麓区", "开福区", "雨花区", "望城区", "长沙县", "宁乡市", "浏阳市"] } } },
+            "福建": { cities: { "福州市": { districts: ["鼓楼区", "台江区", "仓山区", "马尾区", "晋安区", "长乐区", "闽侯县", "连江县", "罗源县", "闽清县", "永泰县", "平潭县", "福清市"] }, "厦门市": { districts: ["思明区", "海沧区", "湖里区", "集美区", "同安区", "翔安区"] } } },
+            "辽宁": { cities: { "沈阳市": { districts: ["和平区", "沈河区", "大东区", "皇姑区", "铁西区", "苏家屯区", "浑南区", "沈北新区", "于洪区", "辽中区", "康平县", "法库县", "新民市"] }, "大连市": { districts: ["中山区", "西岗区", "沙河口区", "甘井子区", "旅顺口区", "金州区", "普兰店区", "瓦房店市", "庄河市", "长海县"] } } },
+            "云南": { cities: { "昆明市": { districts: ["五华区", "盘龙区", "官渡区", "西山区", "东川区", "呈贡区", "晋宁区", "富民县", "宜良县", "石林彝族自治县", "嵩明县", "禄劝彝族苗族自治县", "寻甸回族彝族自治县", "安宁市"] } } },
+            "黑龙江": { cities: { "哈尔滨市": { districts: ["道里区", "南岗区", "道外区", "平房区", "松北区", "香坊区", "呼兰区", "阿城区", "双城区", "依兰县", "方正县", "宾县", "巴彦县", "木兰县", "通河县", "延寿县", "尚志市", "五常市"] } } },
+            "安徽": { cities: { "合肥市": { districts: ["瑶海区", "庐阳区", "蜀山区", "包河区", "长丰县", "肥东县", "肥西县", "庐江县", "巢湖市"] } } },
+            "河北": { cities: { "石家庄市": { districts: ["长安区", "桥西区", "新华区", "井陉矿区", "裕华区", "藁城区", "鹿泉区", "栾城区", "井陉县", "正定县", "行唐县", "灵寿县", "高邑县", "深泽县", "赞皇县", "无极县", "平山县", "元氏县", "赵县", "辛集市", "晋州市", "新乐市"] }, "廊坊市": { districts: ["安次区", "广阳区", "固安县", "永清县", "香河县", "大城县", "文安县", "大厂回族自治县", "霸州市", "三河市"] }, "唐山市": { districts: ["路南区", "路北区", "古冶区", "开平区", "丰南区", "丰润区", "曹妃甸区", "滦南县", "乐亭县", "迁西县", "玉田县", "遵化市", "迁安市", "滦州市"] } } },
+            "山西": { cities: { "太原市": { districts: ["小店区", "迎泽区", "杏花岭区", "尖草坪区", "万柏林区", "晋源区", "清徐县", "阳曲县", "娄烦县", "古交市"] } } },
+            "江西": { cities: { "南昌市": { districts: ["东湖区", "西湖区", "青云谱区", "青山湖区", "新建区", "红谷滩区", "南昌县", "安义县", "进贤县"] } } },
+            "广西": { cities: { "南宁市": { districts: ["兴宁区", "青秀区", "江南区", "西乡塘区", "良庆区", "邕宁区", "武鸣区", "隆安县", "马山县", "上林县", "宾阳县", "横县"] } } },
+            "海南": { cities: { "海口市": { districts: ["秀英区", "龙华区", "琼山区", "美兰区"] }, "三亚市": { districts: ["海棠区", "吉阳区", "天涯区", "崖州区"] } } },
+            "贵州": { cities: { "贵阳市": { districts: ["南明区", "云岩区", "花溪区", "乌当区", "白云区", "观山湖区", "开阳县", "息烽县", "修文县", "清镇市"] } } },
+            "甘肃": { cities: { "兰州市": { districts: ["城关区", "七里河区", "西固区", "安宁区", "红古区", "永登县", "皋兰县", "榆中县"] } } },
+            "宁夏": { cities: { "银川市": { districts: ["兴庆区", "西夏区", "金凤区", "永宁县", "贺兰县", "灵武市"] } } },
+            "青海": { cities: { "西宁市": { districts: ["城东区", "城中区", "城西区", "城北区", "湟中区", "大通回族土族自治县", "湟源县"] } } },
+            "新疆": { cities: { "乌鲁木齐市": { districts: ["天山区", "沙依巴克区", "新市区", "水磨沟区", "头屯河区", "达坂城区", "米东区", "乌鲁木齐县"] } } },
+            "西藏": { cities: { "拉萨市": { districts: ["城关区", "堆龙德庆区", "林周县", "当雄县", "尼木县", "曲水县", "达孜区", "墨竹工卡县"] } } },
+            "重庆": { cities: { "重庆市": { districts: ["万州区", "涪陵区", "渝中区", "大渡口区", "江北区", "沙坪坝区", "九龙坡区", "南岸区", "北碚区", "綦江区", "大足区", "渝北区", "巴南区", "黔江区", "长寿区", "江津区", "合川区", "永川区", "南川区", "璧山区", "铜梁区", "潼南区", "荣昌区", "开州区", "梁平区", "武隆区", "城口县", "丰都县", "垫江县", "忠县", "云阳县", "奉节县", "巫山县", "巫溪县", "石柱土家族自治县", "秀山土家族苗族自治县", "酉阳土家族苗族自治县", "彭水苗族土家族自治县"] } } },
+            "天津": { cities: { "天津市": { districts: ["和平区", "河东区", "河西区", "南开区", "河北区", "红桥区", "东丽区", "西青区", "津南区", "北辰区", "武清区", "宝坻区", "滨海新区", "宁河区", "静海区", "蓟州区"] } } }
+        };
+
+        // 初始化省份选择
+        function initProvinces() {
+            const provinces = Object.keys(regionData);
+            const departureProvince = document.getElementById('departureProvince');
+            const destinationProvince = document.getElementById('destinationProvince');
+            
+            provinces.forEach(province => {
+                const option1 = document.createElement('option');
+                option1.value = province;
+                option1.textContent = province;
+                departureProvince.appendChild(option1);
+                
+                const option2 = document.createElement('option');
+                option2.value = province;
+                option2.textContent = province;
+                destinationProvince.appendChild(option2);
+            });
+        }
+
+        // 更新出发地城市列表
+        function updateDepartureCity() {
+            const province = document.getElementById('departureProvince').value;
+            const citySelect = document.getElementById('departureCity');
+            const districtSelect = document.getElementById('departureDistrict');
+            
+            // 清空城市和区县
+            citySelect.innerHTML = '<option value="">请选择市</option>';
+            districtSelect.innerHTML = '<option value="">请选择县</option>';
+            
+            if (province && regionData[province]) {
+                const cities = Object.keys(regionData[province].cities);
+                cities.forEach(city => {
+                    const option = document.createElement('option');
+                    option.value = city;
+                    option.textContent = city;
+                    citySelect.appendChild(option);
+                });
+            }
+        }
+
+        // 更新出发地区县列表
+        function updateDepartureDistrict() {
+            const province = document.getElementById('departureProvince').value;
+            const city = document.getElementById('departureCity').value;
+            const districtSelect = document.getElementById('departureDistrict');
+            
+            // 清空区县
+            districtSelect.innerHTML = '<option value="">请选择县</option>';
+            
+            if (province && city && regionData[province] && regionData[province].cities[city]) {
+                const districts = regionData[province].cities[city].districts;
+                districts.forEach(district => {
+                    const option = document.createElement('option');
+                    option.value = district;
+                    option.textContent = district;
+                    districtSelect.appendChild(option);
+                });
+            }
+        }
+
+        // 更新目的地城市列表
+        function updateDestinationCity() {
+            const province = document.getElementById('destinationProvince').value;
+            const citySelect = document.getElementById('destinationCity');
+            const districtSelect = document.getElementById('destinationDistrict');
+            
+            // 清空城市和区县
+            citySelect.innerHTML = '<option value="">请选择市</option>';
+            districtSelect.innerHTML = '<option value="">请选择县</option>';
+            
+            if (province && regionData[province]) {
+                const cities = Object.keys(regionData[province].cities);
+                cities.forEach(city => {
+                    const option = document.createElement('option');
+                    option.value = city;
+                    option.textContent = city;
+                    citySelect.appendChild(option);
+                });
+            }
+        }
+
+        // 更新目的地区县列表
+        function updateDestinationDistrict() {
+            const province = document.getElementById('destinationProvince').value;
+            const city = document.getElementById('destinationCity').value;
+            const districtSelect = document.getElementById('destinationDistrict');
+            
+            // 清空区县
+            districtSelect.innerHTML = '<option value="">请选择县</option>';
+            
+            if (province && city && regionData[province] && regionData[province].cities[city]) {
+                const districts = regionData[province].cities[city].districts;
+                districts.forEach(district => {
+                    const option = document.createElement('option');
+                    option.value = district;
+                    option.textContent = district;
+                    districtSelect.appendChild(option);
+                });
+            }
+        }
+
+        // 组合省市区为完整地址
+        function combineAddress(province, city, district) {
+            const parts = [];
+            if (province) parts.push(province);
+            if (city) parts.push(city);
+            if (district) parts.push(district);
+            return parts.length > 0 ? parts.join('') : '';
+        }
+
         // 获取旅行信息
         function getTravelInfo() {
+            const departureProvince = document.getElementById('departureProvince').value;
+            const departureCity = document.getElementById('departureCity').value;
+            const departureDistrict = document.getElementById('departureDistrict').value;
+            const destinationProvince = document.getElementById('destinationProvince').value;
+            const destinationCity = document.getElementById('destinationCity').value;
+            const destinationDistrict = document.getElementById('destinationDistrict').value;
+            
             return {
                 departureDate: document.getElementById('departureDate').value,
                 returnDate: document.getElementById('returnDate').value,
-                departureCity: document.getElementById('departureCity').value,
-                destination: document.getElementById('destination').value,
+                departureCity: combineAddress(departureProvince, departureCity, departureDistrict),
+                destination: combineAddress(destinationProvince, destinationCity, destinationDistrict),
                 budget: document.getElementById('budget').value,
                 hotelPreference: document.getElementById('hotelPreference').value,
                 transportMode: document.getElementById('transportMode').value,
@@ -607,6 +777,11 @@
             };
         }
 
+        // 页面加载时初始化省份
+        window.addEventListener('DOMContentLoaded', function() {
+            initProvinces();
+        });
+
         // 应用旅行信息并生成规划
         async function applyTravelInfo() {
             console.log('应用信息按钮被点击');
@@ -614,11 +789,7 @@
             // 获取旅行信息
             const info = getTravelInfo();
             
-            // 验证必填字段
-            if (!info.destination) {
-                alert('请填写目的地');
-                return;
-            }
+            // 验证必填字段（出发地和目的地现在是可选的）
             if (!info.departureDate || !info.returnDate) {
                 alert('请填写出发日期和返回日期');
                 return;
@@ -734,12 +905,14 @@
             // 创建规划卡片
             const planCard = document.createElement('div');
             planCard.className = 'travel-plan-card';
+            const destinationText = travelInfo.destination ? `${days}天${travelInfo.destination}旅行规划` : `${days}天旅行规划`;
             planCard.innerHTML = `
                 <div class="plan-header">
-                    <h2>📅 ${days}天${travelInfo.destination}旅行规划</h2>
+                    <h2>📅 ${destinationText}</h2>
                     <div class="plan-meta">
                         <span>📆 ${travelInfo.departureDate} 至 ${travelInfo.returnDate}</span>
                         ${travelInfo.departureCity ? `<span>🚩 出发地: ${travelInfo.departureCity}</span>` : ''}
+                        ${travelInfo.destination ? `<span>📍 目的地: ${travelInfo.destination}</span>` : ''}
                         ${travelInfo.budget ? `<span>💰 预算: ${travelInfo.budget}元</span>` : ''}
                         ${travelInfo.transportMode ? `<span>✈️ 出行: ${travelInfo.transportMode}</span>` : ''}
                     </div>
@@ -877,46 +1050,8 @@
             console.log('旅行信息已清空');
         }
 
-        // 构建包含旅行信息的消息
-        function buildMessageWithContext(userMessage) {
-            // 使用存储在travelInfo变量中的旅行信息，而不是直接从表单获取
-            // 这样可以确保消息上下文中的旅行信息与发送到后端的旅行信息一致
-            const info = travelInfo;
-            let contextMessage = userMessage;
-            
-            // 如果有旅行信息，添加到消息上下文中
-            const infoParts = [];
-            if (info.departureDate && info.returnDate) {
-                infoParts.push(`出发日期：${info.departureDate}，返回日期：${info.returnDate}`);
-            }
-            if (info.departureCity) {
-                infoParts.push(`出发地：${info.departureCity}`);
-            }
-            if (info.destination) {
-                infoParts.push(`目的地：${info.destination}`);
-            }
-            if (info.budget) {
-                infoParts.push(`预算：${info.budget}元`);
-            }
-            if (info.hotelPreference) {
-                infoParts.push(`旅店偏好：${info.hotelPreference}`);
-            }
-            if (info.transportMode) {
-                infoParts.push(`出行方式：${info.transportMode}`);
-            }
-            if (info.travelStyle) {
-                infoParts.push(`旅行风格：${info.travelStyle}`);
-            }
-            if (info.interests) {
-                infoParts.push(`兴趣偏好：${info.interests}`);
-            }
-
-            if (infoParts.length > 0) {
-                contextMessage = `[旅行信息：${infoParts.join('，')}] ${userMessage}`;
-            }
-
-            return contextMessage;
-        }
+        // 注意：不再在消息中添加旅行信息，旅行信息通过travelInfo字段单独传递
+        // 这样可以避免重复输入，后端Agent会管理旅行信息
 
         function addMessage(content, isUser) {
             const messageDiv = document.createElement('div');
@@ -964,14 +1099,7 @@
                 travelInfo = getTravelInfo();
             }
 
-            // 添加调试日志
-            console.log('发送消息前的travelInfo:', travelInfo);
-            console.log('直接从表单获取的信息:', getTravelInfo());
-
-            // 构建包含旅行信息的消息
-            const contextMessage = buildMessageWithContext(message);
-
-            // 添加用户消息（只显示原始消息）
+            // 添加用户消息（只显示原始消息，不包含旅行信息）
             addMessage(message, true);
             messageInput.value = '';
             
@@ -981,22 +1109,17 @@
             showLoading();
 
             try {
-                // 使用存储在travelInfo变量中的旅行信息
+                // 直接发送原始消息，旅行信息通过travelInfo字段单独传递
+                // 后端Agent会管理旅行信息，避免重复输入
                 const response = await fetch('/api/chat', { 
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ 
-                        message: contextMessage,
-                        travelInfo: travelInfo
+                        message: message,  // 只发送原始消息，不添加旅行信息
+                        travelInfo: travelInfo  // 旅行信息单独传递
                     })
-                });
-
-                // 添加调试日志
-                console.log('发送到后端的数据:', { 
-                    message: contextMessage,
-                    travelInfo: travelInfo
                 });
 
                 const data = await response.json();
