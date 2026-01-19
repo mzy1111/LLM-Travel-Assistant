@@ -52,7 +52,7 @@ python -m unittest tests.test_agent_tools.TestWeatherTool -v
 - ✅ 天气API实际连接测试（需要AMAP_API_KEY）
 - ✅ 交通API实际连接测试（需要AMAP_API_KEY）
 - ✅ 酒店工具基本功能测试
-- ✅ 景点API实际连接测试（需要TIANAPI_KEY）
+- ✅ 景点API实际连接测试（需要AMAP_API_KEY，使用高德地图POI API）
 - ✅ 错误处理测试
 
 ### test_specialized_agents.py
@@ -68,11 +68,8 @@ python -m unittest tests.test_agent_tools.TestWeatherTool -v
 要运行实际API连接测试，需要在`env`文件中配置以下密钥：
 
 ```bash
-# 高德地图API（用于天气和交通）
+# 高德地图API（用于天气、交通和景点查询）
 AMAP_API_KEY='your_amap_api_key_here'
-
-# 天聚数行API（用于景点）
-TIANAPI_KEY='your_tianapi_key_here'
 ```
 
 如果没有配置API密钥，相关测试会被自动跳过。

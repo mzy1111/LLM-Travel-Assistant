@@ -1,10 +1,12 @@
 """智能旅行助手Agent - 主协调Agent"""
-from typing import Optional, List
+from typing import Optional, List, Callable, Generator
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_openai_tools_agent, AgentExecutor
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
 from langchain_core.tools import Tool
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.schema import AgentAction, AgentFinish, LLMResult
 from src.agent.tools import TRAVEL_TOOLS
 from src.agent.specialized_agents import (
     WeatherAgent,
@@ -15,6 +17,7 @@ from src.agent.specialized_agents import (
     RecommendationAgent
 )
 from src.config import config
+from src.utils.logger import AgentLogger
 
 
 class TravelAgent:
@@ -25,6 +28,9 @@ class TravelAgent:
         self.verbose = verbose if verbose is not None else config.get("agent.verbose", True)
         self.session_id = session_id  # 用于区分不同用户的偏好
         
+        # 初始化日志记录器
+        self.logger = AgentLogger(verbose=self.verbose)
+        
         # 存储旅行信息
         self.travel_info = {}
         # 跟踪旅行信息是否已经添加到对话中（避免重复添加）
@@ -32,16 +38,14 @@ class TravelAgent:
         self.last_travel_info_hash = None
         
         # 初始化专门的Agent实例
-        if self.verbose:
-            print("初始化专门的Agent...", flush=True)
+        self.logger.log_section("初始化专门的Agent")
         self.weather_agent = WeatherAgent(verbose=self.verbose)
         self.transport_agent = TransportAgent(verbose=self.verbose)
         self.hotel_agent = HotelAgent(verbose=self.verbose)
         self.attraction_agent = AttractionAgent(verbose=self.verbose)
         self.planning_agent = PlanningAgent(verbose=self.verbose)
         self.recommendation_agent = RecommendationAgent(verbose=self.verbose)
-        if self.verbose:
-            print("所有专门Agent初始化完成", flush=True)
+        self.logger.log_info("所有专门Agent初始化完成")
         
         # 初始化LLM
         import os
@@ -74,12 +78,10 @@ class TravelAgent:
         try:
             self.llm = ChatOpenAI(**llm_kwargs)
             # 测试LLM是否可用（可选，但会增加初始化时间）
-            if self.verbose:
-                print("LLM初始化成功", flush=True)
+            self.logger.log_info("LLM初始化成功")
         except Exception as e:
             error_msg = str(e)
-            if self.verbose:
-                print(f"LLM初始化失败: {error_msg}", flush=True)
+            self.logger.log_error("LLM初始化失败", e)
             raise ValueError(
                 f"LLM初始化失败: {error_msg}\n"
                 f"请检查：\n"
@@ -172,11 +174,12 @@ class TravelAgent:
             )
         
         # 创建Agent执行器
+        # 关闭LangChain的verbose输出，使用我们自己的日志系统
         agent_executor = AgentExecutor(
             agent=agent,
             tools=agent_tools,
             memory=memory,
-            verbose=self.verbose,
+            verbose=False,  # 关闭LangChain的详细输出，避免与我们的日志重复
             max_iterations=config.get("agent.max_iterations", 15),  # 增加迭代次数，因为需要调用多个agent
             handle_parsing_errors=True
         )
@@ -188,44 +191,122 @@ class TravelAgent:
         tools = []
         
         # 天气Agent工具
+        def call_weather_agent(query: str) -> str:
+            self.logger.log_agent_call_start("天气Agent (WeatherAgent)", query)
+            try:
+                result = self.weather_agent.query(query)
+                self.logger.log_agent_call_end("天气Agent (WeatherAgent)", success=True, response_length=len(result))
+                return result
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 150:
+                    error_msg = error_msg[:150] + "..."
+                self.logger.log_agent_call_end("天气Agent (WeatherAgent)", success=False, error=error_msg)
+                raise
+        
         tools.append(Tool(
             name="query_weather_agent",
-            func=lambda query: self.weather_agent.query(query),
+            func=call_weather_agent,
             description="查询天气信息的专门Agent。当用户询问天气、需要根据天气调整行程时使用。输入应该包含城市名称和日期。"
         ))
         
         # 交通Agent工具
+        def call_transport_agent(query: str) -> str:
+            self.logger.log_agent_call_start("交通Agent (TransportAgent)", query)
+            try:
+                result = self.transport_agent.query(query)
+                self.logger.log_agent_call_end("交通Agent (TransportAgent)", success=True, response_length=len(result))
+                return result
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 150:
+                    error_msg = error_msg[:150] + "..."
+                self.logger.log_agent_call_end("交通Agent (TransportAgent)", success=False, error=error_msg)
+                raise
+        
         tools.append(Tool(
             name="query_transport_agent",
-            func=lambda query: self.transport_agent.query(query),
+            func=call_transport_agent,
             description="查询交通路线信息的专门Agent。当用户询问交通路线、距离、时间、费用时使用。对于自驾方式，会使用高德地图API精确计算。输入应该包含出发地、目的地和出行方式。"
         ))
         
         # 酒店Agent工具
+        def call_hotel_agent(query: str) -> str:
+            self.logger.log_agent_call_start("酒店Agent (HotelAgent)", query)
+            try:
+                result = self.hotel_agent.query(query)
+                self.logger.log_agent_call_end("酒店Agent (HotelAgent)", success=True, response_length=len(result))
+                return result
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 150:
+                    error_msg = error_msg[:150] + "..."
+                self.logger.log_agent_call_end("酒店Agent (HotelAgent)", success=False, error=error_msg)
+                raise
+        
         tools.append(Tool(
             name="query_hotel_agent",
-            func=lambda query: self.hotel_agent.query(query),
+            func=call_hotel_agent,
             description="查询酒店价格信息的专门Agent。当用户询问酒店价格、住宿预算时使用。输入应该包含城市、入住日期、退房日期和酒店偏好。"
         ))
         
         # 景点Agent工具
+        def call_attraction_agent(query: str) -> str:
+            self.logger.log_agent_call_start("景点Agent (AttractionAgent)", query)
+            try:
+                result = self.attraction_agent.query(query)
+                self.logger.log_agent_call_end("景点Agent (AttractionAgent)", success=True, response_length=len(result))
+                return result
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 150:
+                    error_msg = error_msg[:150] + "..."
+                self.logger.log_agent_call_end("景点Agent (AttractionAgent)", success=False, error=error_msg)
+                raise
+        
         tools.append(Tool(
             name="query_attraction_agent",
-            func=lambda query: self.attraction_agent.query(query),
+            func=call_attraction_agent,
             description="查询景点信息的专门Agent。当用户询问景点门票、景点信息、景点问答时使用。输入应该包含城市、景点名称或兴趣偏好。"
         ))
         
         # 规划Agent工具
+        def call_planning_agent(query: str) -> str:
+            self.logger.log_agent_call_start("规划Agent (PlanningAgent)", query)
+            try:
+                result = self.planning_agent.query(query)
+                self.logger.log_agent_call_end("规划Agent (PlanningAgent)", success=True, response_length=len(result))
+                return result
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 150:
+                    error_msg = error_msg[:150] + "..."
+                self.logger.log_agent_call_end("规划Agent (PlanningAgent)", success=False, error=error_msg)
+                raise
+        
         tools.append(Tool(
             name="query_planning_agent",
-            func=lambda query: self.planning_agent.query(query),
+            func=call_planning_agent,
             description="规划旅行行程的专门Agent。当用户需要规划详细行程时使用。该Agent会整合天气、酒店、交通、景点等信息。输入应该包含旅行天数、目的地、预算、偏好等信息。"
         ))
         
         # 推荐Agent工具
+        def call_recommendation_agent(query: str) -> str:
+            self.logger.log_agent_call_start("推荐Agent (RecommendationAgent)", query)
+            try:
+                result = self.recommendation_agent.query(query)
+                self.logger.log_agent_call_end("推荐Agent (RecommendationAgent)", success=True, response_length=len(result))
+                return result
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 150:
+                    error_msg = error_msg[:150] + "..."
+                self.logger.log_agent_call_end("推荐Agent (RecommendationAgent)", success=False, error=error_msg)
+                raise
+        
         tools.append(Tool(
             name="query_recommendation_agent",
-            func=lambda query: self.recommendation_agent.query(query),
+            func=call_recommendation_agent,
             description="提供个性化推荐的专门Agent。当用户需要推荐目的地、景点、活动时使用。输入应该包含目的地、兴趣偏好、旅行风格等信息。"
         ))
         
@@ -259,15 +340,17 @@ class TravelAgent:
                 # ConversationBufferMemory会自动管理历史对话
                 combined_input = user_input
             
-            if self.verbose:
-                print(f"Agent输入: {combined_input[:200]}...", flush=True)
+            # 记录主协调Agent的调用
+            self.logger.log_section("主协调Agent处理用户请求")
+            self.logger.log_info(f"用户输入: {user_input[:200]}{'...' if len(user_input) > 200 else ''}")
+            if self.travel_info:
+                self.logger.log_info(f"旅行信息: {list(self.travel_info.keys())}")
             
             # 调用Agent执行器（ConversationBufferMemory会自动包含历史对话）
             response = self.agent_executor.invoke({"input": combined_input})
             output = response.get("output", "抱歉，我无法处理您的请求。")
             
-            if self.verbose:
-                print(f"Agent输出长度: {len(output)}", flush=True)
+            self.logger.log_info(f"主协调Agent响应完成，输出长度: {len(output)} 字符")
             
             # 检查输出是否包含错误信息
             if "错误" in output or "error" in output.lower() or "❌" in output:
@@ -286,9 +369,14 @@ class TravelAgent:
             error_str = str(e).lower()
             error_trace = traceback.format_exc()
             
-            if self.verbose:
-                print(f"Agent执行错误: {e}", flush=True)
-                print(f"错误堆栈:\n{error_trace}", flush=True)
+            # 简化错误信息
+            error_msg = str(e)
+            if len(error_msg) > 200:
+                error_msg = error_msg[:200] + "..."
+            self.logger.log_error("主协调Agent执行错误", Exception(error_msg))
+            # 只在详细模式下输出堆栈信息
+            if self.verbose and "timeout" not in error_msg.lower() and "connection" not in error_msg.lower():
+                print(f"   详细堆栈:\n{error_trace}", flush=True)
             
             # 根据错误类型提供友好的错误信息
             if "connection" in error_str or "connect" in error_str:
@@ -366,6 +454,104 @@ class TravelAgent:
             旅行信息字典
         """
         return self.travel_info
+    
+    def chat_stream(self, user_input: str, on_tool_call: Optional[Callable[[str, str], None]] = None) -> Generator[str, None, None]:
+        """
+        流式对话，支持实时返回工具执行结果
+        
+        Args:
+            user_input: 用户输入
+            on_tool_call: 工具调用回调函数，参数为(tool_name, result)
+            
+        Yields:
+            生成的文本片段
+        """
+        try:
+            # 准备输入（与chat方法相同）
+            import hashlib
+            travel_info_str = str(sorted(self.travel_info.items()))
+            current_travel_info_hash = hashlib.md5(travel_info_str.encode()).hexdigest()
+            
+            if self.travel_info and (not self.travel_info_added_to_conversation or current_travel_info_hash != self.last_travel_info_hash):
+                travel_context = self._format_travel_info()
+                combined_input = f"{travel_context}\n\n用户问题: {user_input}"
+                self.travel_info_added_to_conversation = True
+                self.last_travel_info_hash = current_travel_info_hash
+            else:
+                combined_input = user_input
+            
+            # 创建流式回调处理器
+            class StreamCallbackHandler(BaseCallbackHandler):
+                def __init__(self):
+                    self.current_tool = None
+                    self.tool_output = None
+                    
+                def on_agent_action(self, action: AgentAction, **kwargs) -> None:
+                    """工具调用开始"""
+                    self.current_tool = action.tool
+                    self.tool_output = None
+                    tool_name = action.tool
+                    # 识别工具名称，发送友好的提示
+                    tool_names = {
+                        "query_weather_agent": "天气查询",
+                        "query_transport_agent": "交通路线",
+                        "query_hotel_agent": "酒店价格",
+                        "query_attraction_agent": "景点信息",
+                        "query_planning_agent": "行程规划",
+                        "query_recommendation_agent": "个性化推荐"
+                    }
+                    friendly_name = tool_names.get(tool_name, tool_name)
+                    if on_tool_call:
+                        on_tool_call(tool_name, f"正在查询{friendly_name}...")
+                    
+                def on_tool_end(self, output: str, **kwargs) -> None:
+                    """工具执行完成"""
+                    if self.current_tool and on_tool_call:
+                        tool_names = {
+                            "query_weather_agent": "天气",
+                            "query_transport_agent": "交通路线",
+                            "query_hotel_agent": "酒店价格",
+                            "query_attraction_agent": "景点信息",
+                            "query_planning_agent": "行程规划",
+                            "query_recommendation_agent": "推荐"
+                        }
+                        friendly_name = tool_names.get(self.current_tool, self.current_tool)
+                        # 提取关键信息（简化输出）
+                        if len(output) > 200:
+                            summary = output[:200] + "..."
+                        else:
+                            summary = output
+                        on_tool_call(self.current_tool, f"✓ {friendly_name}查询完成：{summary}")
+                        self.current_tool = None
+                        
+            callback = StreamCallbackHandler()
+            
+            # 使用流式执行（如果支持）
+            # 注意：AgentExecutor.invoke不支持流式，我们需要使用stream或astream
+            try:
+                # 尝试使用astream方法（异步流式）
+                # 对于同步调用，我们只能通过回调获取工具执行信息
+                # 实际的流式输出需要使用不同的方法
+                response = self.agent_executor.invoke(
+                    {"input": combined_input},
+                    config={"callbacks": [callback]}
+                )
+                output = response.get("output", "抱歉，我无法处理您的请求。")
+                
+                # 返回完整输出（这里无法真正流式输出LLM的token，但可以返回工具执行进度）
+                yield output
+                
+            except Exception as e:
+                # 如果流式失败，回退到普通方法
+                response = self.agent_executor.invoke({"input": combined_input})
+                output = response.get("output", "抱歉，我无法处理您的请求。")
+                yield output
+                
+        except Exception as e:
+            error_msg = str(e)
+            if len(error_msg) > 200:
+                error_msg = error_msg[:200] + "..."
+            yield f"❌ 处理您的请求时出现错误: {error_msg}"
     
     def reset_memory(self):
         """重置对话记忆和旅行信息"""

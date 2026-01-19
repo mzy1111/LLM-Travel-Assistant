@@ -14,6 +14,7 @@ from src.agent.tools import (
     plan_travel_itinerary
 )
 from src.config import config
+from src.utils.logger import AgentLogger
 
 
 class BaseSpecializedAgent:
@@ -21,6 +22,7 @@ class BaseSpecializedAgent:
     
     def __init__(self, verbose: Optional[bool] = None):
         self.verbose = verbose if verbose is not None else config.get("agent.verbose", True)
+        self.logger = AgentLogger(verbose=self.verbose)
         self.llm = self._create_llm()
         self.agent_executor = None
     
@@ -58,11 +60,15 @@ class BaseSpecializedAgent:
         
         try:
             response = self.agent_executor.invoke({"input": user_input})
-            return response.get("output", "抱歉，我无法处理您的请求。")
+            result = response.get("output", "抱歉，我无法处理您的请求。")
+            return result
         except Exception as e:
-            if self.verbose:
-                print(f"Agent执行错误: {e}", flush=True)
-            return f"处理请求时出错: {str(e)}"
+            # 只记录错误，不重复输出（错误会在调用结束时记录）
+            error_msg = str(e)
+            # 简化错误信息，避免过长
+            if len(error_msg) > 100:
+                error_msg = error_msg[:100] + "..."
+            raise Exception(error_msg)  # 重新抛出，让调用者处理
 
 
 class WeatherAgent(BaseSpecializedAgent):
@@ -110,7 +116,7 @@ class WeatherAgent(BaseSpecializedAgent):
             agent=agent,
             tools=[get_weather_info],
             memory=memory,
-            verbose=self.verbose,
+            verbose=False,  # 关闭LangChain的详细输出，使用我们自己的日志系统
             max_iterations=5,
             handle_parsing_errors=True
         )
@@ -162,7 +168,7 @@ class TransportAgent(BaseSpecializedAgent):
             agent=agent,
             tools=[get_transport_route],
             memory=memory,
-            verbose=self.verbose,
+            verbose=False,  # 关闭LangChain的详细输出，使用我们自己的日志系统
             max_iterations=5,
             handle_parsing_errors=True
         )
@@ -213,7 +219,7 @@ class HotelAgent(BaseSpecializedAgent):
             agent=agent,
             tools=[get_hotel_prices],
             memory=memory,
-            verbose=self.verbose,
+            verbose=False,  # 关闭LangChain的详细输出，使用我们自己的日志系统
             max_iterations=5,
             handle_parsing_errors=True
         )
@@ -264,7 +270,7 @@ class AttractionAgent(BaseSpecializedAgent):
             agent=agent,
             tools=[get_attraction_ticket_prices, answer_attraction_question],
             memory=memory,
-            verbose=self.verbose,
+            verbose=False,  # 关闭LangChain的详细输出，使用我们自己的日志系统
             max_iterations=5,
             handle_parsing_errors=True
         )
@@ -316,7 +322,7 @@ class PlanningAgent(BaseSpecializedAgent):
             agent=agent,
             tools=[plan_travel_itinerary],
             memory=memory,
-            verbose=self.verbose,
+            verbose=False,  # 关闭LangChain的详细输出，使用我们自己的日志系统
             max_iterations=5,
             handle_parsing_errors=True
         )
@@ -367,7 +373,7 @@ class RecommendationAgent(BaseSpecializedAgent):
             agent=agent,
             tools=[get_personalized_recommendations],
             memory=memory,
-            verbose=self.verbose,
+            verbose=False,  # 关闭LangChain的详细输出，使用我们自己的日志系统
             max_iterations=5,
             handle_parsing_errors=True
         )

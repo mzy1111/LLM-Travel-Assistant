@@ -29,12 +29,9 @@ class TestRealAPIConnection(unittest.TestCase):
     def setUpClass(cls):
         """检查API密钥是否配置"""
         cls.has_amap_key = bool(os.getenv("AMAP_API_KEY") or config.get("transport.api_key", ""))
-        cls.has_tianapi_key = bool(os.getenv("TIANAPI_KEY") or config.get("attraction.api_key", ""))
         
         if not cls.has_amap_key:
-            print("\n警告: AMAP_API_KEY 未配置，将跳过高德地图API测试")
-        if not cls.has_tianapi_key:
-            print("\n警告: TIANAPI_KEY 未配置，将跳过天聚数行API测试")
+            print("\n警告: AMAP_API_KEY 未配置，将跳过高德地图API测试（包括天气、交通和景点查询）")
     
     def test_weather_api_today_real_data(self):
         """测试天气API获取当天实际天气数据"""
@@ -255,9 +252,9 @@ class TestRealAPIConnection(unittest.TestCase):
             self.fail(f"酒店工具调用失败: {str(e)}")
     
     def test_attraction_api_real_connection(self):
-        """测试景点API实际连接和功能验证"""
-        if not self.has_tianapi_key:
-            self.skipTest("TIANAPI_KEY 未配置")
+        """测试景点API实际连接和功能验证（使用高德地图POI API）"""
+        if not self.has_amap_key:
+            self.skipTest("AMAP_API_KEY 未配置")
         
         city = "北京"
         interests = "历史、文化"

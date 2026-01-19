@@ -9,6 +9,14 @@ except ImportError:
     from langchain_core.tools import tool
 
 from src.config import config
+from src.utils.logger import AgentLogger
+from src.utils.amap_rate_limiter import get_amap_rate_limiter
+
+# 创建全局日志记录器（工具函数使用）
+_tool_logger = AgentLogger(verbose=True)
+
+# 获取高德地图API限流器实例
+_amap_limiter = get_amap_rate_limiter()
 
 
 @tool
@@ -29,6 +37,8 @@ def get_weather_info(city: str, date: str) -> str:
         api_key = os.getenv("AMAP_API_KEY") or config.get("transport.api_key", "") or config.get("weather.api_key", "")
         
         if not api_key:
+            _tool_logger.log_api_call("高德地图天气API", "跳过", "API密钥未配置")
+            _tool_logger.log_fallback("天气信息", "API密钥未配置，使用默认估算")
             return f"天气API密钥未配置。假设{city}在{date}的天气为：晴天，温度15-25°C，适合户外活动。"
         
         # 首先通过地理编码API获取城市编码（adcode）
@@ -39,19 +49,26 @@ def get_weather_info(city: str, date: str) -> str:
             "output": "json"
         }
         
-        geo_response = requests.get(geo_url, params=geo_params, timeout=5)
+        geo_response = _amap_limiter.get(geo_url, params=geo_params, timeout=5)
         if geo_response.status_code != 200:
+            _tool_logger.log_api_call("高德地图地理编码API", "失败", f"HTTP {geo_response.status_code}")
+            _tool_logger.log_fallback("天气信息", f"地理编码失败，使用默认估算")
             return f"无法获取{city}的地理位置信息。假设天气为：晴天，温度15-25°C，适合户外活动。"
         
         geo_data = geo_response.json()
         if geo_data.get("status") != "1" or not geo_data.get("geocodes"):
+            _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到城市: {city}")
+            _tool_logger.log_fallback("天气信息", f"未找到城市，使用默认估算")
             return f"未找到城市{city}。假设天气为：晴天，温度15-25°C，适合户外活动。"
         
         # 获取城市编码（adcode）
         adcode = geo_data["geocodes"][0].get("adcode", "")
         city_name = geo_data["geocodes"][0].get("formatted_address", city)
+        _tool_logger.log_api_call("高德地图地理编码API", "成功", f"获取{city}的地理编码: {adcode}")
         
         if not adcode:
+            _tool_logger.log_api_call("高德地图地理编码API", "失败", "无法获取城市编码")
+            _tool_logger.log_fallback("天气信息", "无法获取城市编码，使用默认估算")
             return f"无法获取{city}的城市编码。假设天气为：晴天，温度15-25°C，适合户外活动。"
         
         # 计算目标日期与今天的天数差
@@ -73,7 +90,7 @@ def get_weather_info(city: str, date: str) -> str:
                 "output": "json"
             }
             
-            weather_response = requests.get(weather_url, params=weather_params, timeout=5)
+            weather_response = _amap_limiter.get(weather_url, params=weather_params, timeout=5)
             if weather_response.status_code == 200:
                 weather_data = weather_response.json()
                 if weather_data.get("status") == "1":
@@ -95,16 +112,7 @@ def get_weather_info(city: str, date: str) -> str:
                             if wind_power:
                                 result += f"，风力{wind_power}"
                             
-                            # 添加活动建议
-                            if "雨" in weather or "雪" in weather:
-                                result += "。建议安排室内活动或准备雨具。"
-                            elif int(temp) if temp != "N/A" and temp.isdigit() else 25 > 30:
-                                result += "。天气较热，建议安排室内活动或选择早晨/傍晚出行。"
-                            elif int(temp) if temp != "N/A" and temp.isdigit() else 15 < 5:
-                                result += "。天气较冷，建议多穿衣物，适合室内活动。"
-                            else:
-                                result += "。天气适宜，适合户外活动和景点游览。"
-                            
+                            _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}当天实况天气")
                             return result
                     
                     # 如果是未来日期，使用预报天气
@@ -141,16 +149,7 @@ def get_weather_info(city: str, date: str) -> str:
                             if nightpower:
                                 result += f"风力{nightpower}"
                             
-                            # 添加活动建议
-                            if "雨" in dayweather or "雨" in nightweather:
-                                result += "。建议安排室内活动或准备雨具。"
-                            elif int(daytemp) if daytemp != "N/A" and daytemp.isdigit() else 25 > 30:
-                                result += "。天气较热，建议安排室内活动或选择早晨/傍晚出行。"
-                            elif int(nighttemp) if nighttemp != "N/A" and nighttemp.isdigit() else 15 < 5:
-                                result += "。天气较冷，建议多穿衣物，适合室内活动。"
-                            else:
-                                result += "。天气适宜，适合户外活动和景点游览。"
-                            
+                            _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}在{date}的预报天气")
                             return result
         
         # 如果日期超过4天，使用实况天气并给出估算
@@ -163,7 +162,7 @@ def get_weather_info(city: str, date: str) -> str:
                 "output": "json"
             }
             
-            weather_response = requests.get(weather_url, params=weather_params, timeout=5)
+            weather_response = _amap_limiter.get(weather_url, params=weather_params, timeout=5)
             if weather_response.status_code == 200:
                 weather_data = weather_response.json()
                 if weather_data.get("status") == "1":
@@ -173,13 +172,18 @@ def get_weather_info(city: str, date: str) -> str:
                         temp = live.get("temperature", "N/A")
                         weather = live.get("weather", "未知")
                         
+                        _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}当前实况天气用于估算")
                         result = f"{city_name}在{date}的天气：{weather}，温度约{temp}°C（基于当前天气估算，{date}距离今天{days_diff}天，实际天气可能有所变化）"
                         result += "。建议根据季节准备相应衣物，关注临近天气预报。"
                         return result
-        
+                    else:
+                        _tool_logger.log_api_call("高德地图天气API", "失败", "无法获取实况天气")
+        _tool_logger.log_fallback("天气信息", "所有API调用失败，使用默认估算")
         return f"天气API无法获取{city_name}在{date}的详细天气信息。建议：根据季节准备相应衣物，关注天气预报。"
         
     except Exception as e:
+        _tool_logger.log_api_call("高德地图天气API", "异常", str(e)[:100])
+        _tool_logger.log_fallback("天气信息", f"异常错误: {str(e)[:100]}")
         return f"获取天气信息时出错: {str(e)}。假设{city}在{date}的天气为：晴天，温度15-25°C，适合户外活动。"
 
 
@@ -193,7 +197,7 @@ def get_hotel_prices(
 ) -> str:
     """
     获取指定城市在指定日期的酒店价格信息。用于更准确地估算旅行预算。
-    注意：由于国内酒店API需要商业合作，当前使用智能估算方案。如需实时价格，可集成携程、去哪儿等平台API。
+    使用智能估算方案，基于城市、季节、酒店类型等因素进行价格估算。
     
     Args:
         city: 城市名称，例如"北京"、"上海"、"广州"
@@ -216,20 +220,8 @@ def get_hotel_prices(
         except:
             nights = 1
         
-        # 尝试使用携程API（如果配置了）
-        ctrip_api_key = os.getenv("CTRIP_API_KEY") or config.get("hotel.api_key", "")
-        ctrip_api_secret = os.getenv("CTRIP_API_SECRET") or config.get("hotel.api_secret", "")
-        
-        if ctrip_api_key and ctrip_api_secret:
-            try:
-                # 携程API调用示例（需要根据实际API文档调整）
-                # 这里提供一个框架，实际使用时需要根据携程开放平台的API文档进行实现
-                hotel_url = "https://openapi.ctrip.com/hotel/search"
-                # 实际调用代码...
-                # 如果成功获取数据，返回实时价格信息
-            except Exception as e:
-                # API调用失败，使用估算
-                pass
+        # 使用智能估算方案（基于城市、季节、酒店类型）
+        _tool_logger.log_info(f"使用智能估算方案获取{city}酒店价格")
         
         # 智能估算方案（基于城市、季节、酒店类型）
         # 根据城市调整价格（一线城市更贵）
@@ -292,11 +284,14 @@ def get_hotel_prices(
         elif season_multiplier < 1.0:
             result += "- 注意：当前为旅游淡季，价格相对较低，可能有优惠\n"
         
-        result += "提示：这是基于城市、季节和酒店类型的智能估算。实际价格可能因位置、预订时间、促销活动等因素有所不同。建议通过携程、去哪儿、美团等平台查询实时价格并提前预订。"
+        result += "提示：这是基于城市、季节和酒店类型的智能估算。实际价格可能因位置、预订时间、促销活动等因素有所不同。建议通过飞猪、携程、去哪儿、美团等平台查询实时价格并提前预订。"
         
+        _tool_logger.log_info(f"酒店价格估算完成: {city}, {hotel_preference}, 价格范围: {min_price}-{max_price_est}元/晚")
         return result
         
     except Exception as e:
+        _tool_logger.log_api_call("酒店价格工具", "异常", str(e)[:100])
+        _tool_logger.log_fallback("酒店价格", f"异常错误: {str(e)[:100]}")
         return f"获取酒店价格时出错: {str(e)}。建议根据城市和偏好估算：经济型120-250元/晚，商务型250-500元/晚，豪华型600-1200元/晚。"
 
 
@@ -327,8 +322,8 @@ def plan_travel_itinerary(
         departure_date: 出发日期，格式为"YYYY-MM-DD"（可选，用于查询天气）
         return_date: 返回日期，格式为"YYYY-MM-DD"（可选，用于查询天气和酒店）
         hotel_preference: 酒店偏好，例如"经济型"、"商务型"、"豪华型"（可选）
-        departure_city: 出发地（可选，用于查询交通路线）
-        transport_mode: 出行方式，例如"飞机"、"高铁"、"火车"、"自驾"（可选，用于查询交通路线）
+        departure_city: 出发地（可选，用于查询自驾路线）
+        transport_mode: 出行方式，仅支持"自驾"（可选，用于查询自驾路线）
         interests: 兴趣偏好，例如"历史、文化、美食"（可选，用于查询景点门票）
         session_id: 会话ID（可选，用于区分不同用户）
     
@@ -344,22 +339,22 @@ def plan_travel_itinerary(
 当前偏好：{preferences if preferences else '无特殊偏好'}
 """
     
-    # **优先查询交通路线**：这是规划行程的基础，必须获取准确的距离和时间
-    if departure_city and destination and transport_mode:
+    # **优先查询自驾路线**：这是规划行程的基础，必须获取准确的距离和时间
+    if departure_city and destination:
+        # 默认使用自驾方式
+        transport_mode_to_use = transport_mode if transport_mode == "自驾" else "自驾"
         try:
             transport_info = get_transport_route.invoke({
                 "origin": departure_city,
                 "destination": destination,
-                "transport_mode": transport_mode
+                "transport_mode": transport_mode_to_use
             })
-            plan_prompt += f"\n【重要】交通路线信息（距离、时间、费用）：\n{transport_info}\n"
+            plan_prompt += f"\n【重要】自驾路线信息（距离、时间、费用）：\n{transport_info}\n"
             plan_prompt += "\n注意：请基于上述实际距离和时间来安排行程，而不是估算。\n"
         except Exception as e:
-            plan_prompt += f"\n警告：无法获取交通路线信息（{str(e)}），将使用估算值。\n"
-    elif departure_city and destination:
-        plan_prompt += "\n提示：已提供出发地和目的地，但缺少出行方式，无法查询准确的交通路线。建议询问用户出行方式或提供多种出行方式的建议。\n"
+            plan_prompt += f"\n警告：无法获取自驾路线信息（{str(e)}），将使用估算值。\n"
     elif departure_city or destination:
-        plan_prompt += "\n提示：缺少出发地或目的地，无法查询准确的交通路线和距离。建议询问用户完整信息或提供通用建议。\n"
+        plan_prompt += "\n提示：缺少出发地或目的地，无法查询准确的自驾路线和距离。建议询问用户完整信息或提供通用建议。\n"
     
     # 如果有目的地和日期信息，查询天气
     if destination and departure_date:
@@ -477,39 +472,36 @@ def get_transport_route(
     transport_mode: str
 ) -> str:
     """
-    获取从出发地到目的地的交通路线规划信息。包括路线、距离、时间、费用估算等。
-    对于自驾方式，优先使用高德地图API进行精确计算（包括地理编码和路径规划），确保距离和时间准确。
-    对于其他出行方式，使用估算方案。
+    获取从出发地到目的地的自驾路线规划信息。包括路线、距离、时间、费用估算等。
+    使用高德地图API进行精确计算（包括地理编码和路径规划），确保距离和时间准确。
     
     Args:
         origin: 出发地，例如"北京"、"北京天安门"、"河北省廊坊市"
         destination: 目的地，例如"上海"、"上海外滩"、"广东省深圳市"
-        transport_mode: 出行方式，例如"飞机"、"高铁"、"火车"、"自驾"、"大巴"
+        transport_mode: 出行方式，仅支持"自驾"
     
     Returns:
-        交通路线信息字符串，包括路线、距离、时间、费用估算等。
-        自驾方式：使用高德地图API精确计算实际距离、时间、过路费等。
-        其他方式：使用估算信息。
+        自驾路线信息字符串，包括路线、距离、时间、过路费等。
+        使用高德地图API精确计算实际距离、时间、过路费等。
     """
     try:
+        # 仅支持自驾方式
+        if transport_mode != "自驾":
+            return f"当前仅支持自驾方式。请将出行方式设置为'自驾'。"
+        
         # 从配置获取API密钥（高德地图）
         api_key = os.getenv("AMAP_API_KEY") or config.get("transport.api_key", "")
         
-        # 根据出行方式选择不同的处理方式
-        if transport_mode in ["飞机", "高铁", "火车", "大巴"]:
-            # 这些方式需要查询票价，但免费API有限，使用估算
-            return _estimate_public_transport(origin, destination, transport_mode)
-        elif transport_mode == "自驾":
-            # 自驾可以使用高德地图路径规划API
-            if api_key:
-                return _get_driving_route(origin, destination, api_key)
-            else:
-                return _estimate_driving_route(origin, destination)
+        # 使用高德地图路径规划API获取自驾路线
+        if api_key:
+            return _get_driving_route(origin, destination, api_key)
         else:
-            return f"出行方式'{transport_mode}'暂不支持路线规划。建议：{origin}到{destination}，请选择合适的出行方式。"
+            return _estimate_driving_route(origin, destination)
             
     except Exception as e:
-        return f"获取交通路线时出错: {str(e)}。建议：{origin}到{destination}，请选择合适的出行方式。"
+        _tool_logger.log_api_call("交通路线工具", "异常", str(e)[:100])
+        _tool_logger.log_fallback("交通路线", f"异常错误: {str(e)[:100]}")
+        return f"获取交通路线时出错: {str(e)}。建议：{origin}到{destination}，请使用自驾方式。"
 
 
 def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
@@ -526,41 +518,73 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
         
         # 获取出发地坐标
         try:
+            _tool_logger.log_info(f"请求出发地地理编码: {origin}")
             geo_params_origin = {
                 "address": origin,
                 "key": api_key,
                 "output": "json"
             }
-            geo_response_origin = requests.get(geo_url, params=geo_params_origin, timeout=5)
+            geo_response_origin = _amap_limiter.get(geo_url, params=geo_params_origin, timeout=5)
             if geo_response_origin.status_code == 200:
                 geo_data_origin = geo_response_origin.json()
-                if geo_data_origin.get("status") == "1" and geo_data_origin.get("geocodes"):
+                api_status = geo_data_origin.get("status")
+                api_info = geo_data_origin.get("info", "")
+                
+                # 检查是否是频率限制错误
+                if api_status != "1":
+                    if "QPS" in api_info or "LIMIT" in api_info:
+                        _tool_logger.log_api_call("高德地图地理编码API", "失败", f"API调用频率超限: {api_info}")
+                        _tool_logger.log_warning(f"出发地地理编码因API频率限制失败，将使用地址字符串进行路径规划")
+                    else:
+                        _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到出发地: {origin} (API返回: {api_info})")
+                elif api_status == "1" and geo_data_origin.get("geocodes"):
                     location = geo_data_origin["geocodes"][0].get("location", "")
                     if location:
                         origin_coord = location  # 格式：经度,纬度
                         origin_name = geo_data_origin["geocodes"][0].get("formatted_address", origin)
+                        _tool_logger.log_api_call("高德地图地理编码API", "成功", f"获取{origin}坐标: {origin_coord}")
+                else:
+                    _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到出发地: {origin} (无geocodes)")
+            else:
+                _tool_logger.log_api_call("高德地图地理编码API", "失败", f"HTTP {geo_response_origin.status_code}")
         except Exception as e:
             # 地理编码失败，继续尝试使用地址字符串
-            pass
+            _tool_logger.log_api_call("高德地图地理编码API", "异常", f"{origin}: {str(e)[:100]}")
         
         # 获取目的地坐标
         try:
+            _tool_logger.log_info(f"请求目的地地理编码: {destination}")
             geo_params_dest = {
                 "address": destination,
                 "key": api_key,
                 "output": "json"
             }
-            geo_response_dest = requests.get(geo_url, params=geo_params_dest, timeout=5)
+            geo_response_dest = _amap_limiter.get(geo_url, params=geo_params_dest, timeout=5)
             if geo_response_dest.status_code == 200:
                 geo_data_dest = geo_response_dest.json()
-                if geo_data_dest.get("status") == "1" and geo_data_dest.get("geocodes"):
+                api_status = geo_data_dest.get("status")
+                api_info = geo_data_dest.get("info", "")
+                
+                # 检查是否是频率限制错误
+                if api_status != "1":
+                    if "QPS" in api_info or "LIMIT" in api_info:
+                        _tool_logger.log_api_call("高德地图地理编码API", "失败", f"API调用频率超限: {api_info}")
+                        _tool_logger.log_warning(f"目的地地理编码因API频率限制失败，将使用地址字符串进行路径规划")
+                    else:
+                        _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到目的地: {destination} (API返回: {api_info})")
+                elif api_status == "1" and geo_data_dest.get("geocodes"):
                     location = geo_data_dest["geocodes"][0].get("location", "")
                     if location:
                         destination_coord = location  # 格式：经度,纬度
                         destination_name = geo_data_dest["geocodes"][0].get("formatted_address", destination)
+                        _tool_logger.log_api_call("高德地图地理编码API", "成功", f"获取{destination}坐标: {destination_coord}")
+                else:
+                    _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到目的地: {destination} (无geocodes)")
+            else:
+                _tool_logger.log_api_call("高德地图地理编码API", "失败", f"HTTP {geo_response_dest.status_code}")
         except Exception as e:
             # 地理编码失败，继续尝试使用地址字符串
-            pass
+            _tool_logger.log_api_call("高德地图地理编码API", "异常", f"{destination}: {str(e)[:100]}")
         
         # 第二步：使用高德地图路径规划API
         route_url = "https://restapi.amap.com/v3/direction/driving"
@@ -576,8 +600,8 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
             "extensions": "all"  # 返回详细信息，包括过路费
         }
         
-        route_response = requests.get(route_url, params=route_params, timeout=10)
-        
+        _tool_logger.log_info(f"请求路径规划: {route_origin} -> {route_destination}")
+        route_response = _amap_limiter.get(route_url, params=route_params, timeout=10)
         if route_response.status_code == 200:
             route_data = route_response.json()
             
@@ -589,10 +613,11 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
                 if paths:
                     # 取第一条路线（通常是最优路线）
                     path = paths[0]
-                    distance = path.get("distance", 0)  # 米
-                    duration = path.get("duration", 0)  # 秒
-                    tolls = path.get("tolls", 0)  # 过路费（元）
-                    toll_distance = path.get("toll_distance", 0)  # 收费路段距离（米）
+                    # 确保所有数值都是数字类型，API可能返回字符串
+                    distance = float(path.get("distance", 0) or 0)  # 米
+                    duration = float(path.get("duration", 0) or 0)  # 秒
+                    tolls = float(path.get("tolls", 0) or 0)  # 过路费（元）
+                    toll_distance = float(path.get("toll_distance", 0) or 0)  # 收费路段距离（米）
                     
                     # 转换单位
                     distance_km = distance / 1000
@@ -619,16 +644,21 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
                     else:
                         result += "- 建议：短途驾驶，适合当日往返\n"
                     
+                    _tool_logger.log_api_call("高德地图路径规划API", "成功", f"获取{origin}到{destination}的精确路线")
                     return result
             else:
                 # API返回错误，记录错误信息
                 error_info = route_data.get("info", "未知错误")
+                _tool_logger.log_api_call("高德地图路径规划API", "失败", error_info)
+                _tool_logger.log_fallback("交通路线", f"API返回错误: {error_info}")
                 error_msg = f"高德地图API返回错误：{error_info}"
                 # 如果API返回错误，尝试使用估算
                 estimate_result = _estimate_driving_route(origin, destination)
                 return f"{error_msg}\n\n{estimate_result}"
         else:
             # HTTP请求失败
+            _tool_logger.log_api_call("高德地图路径规划API", "失败", f"HTTP {route_response.status_code}")
+            _tool_logger.log_fallback("交通路线", f"HTTP请求失败: {route_response.status_code}")
             error_msg = f"高德地图API请求失败（HTTP {route_response.status_code}）"
             estimate_result = _estimate_driving_route(origin, destination)
             return f"{error_msg}\n\n{estimate_result}"
@@ -769,7 +799,7 @@ def get_attraction_ticket_prices(
 ) -> str:
     """
     获取指定城市的景点门票价格信息。用于帮助用户了解景点费用，合理规划预算。
-    使用天聚数行旅游景区API或高德地图POI API查询景点信息。
+    使用高德地图POI API查询景点信息。
     
     Args:
         city: 城市名称，例如"北京"、"上海"、"杭州"
@@ -777,112 +807,91 @@ def get_attraction_ticket_prices(
         interests: 兴趣偏好（可选），例如"历史"、"文化"、"自然"、"美食"
     
     Returns:
-        景点门票价格信息字符串，包括景点名称、门票价格、开放时间等。如果API不可用，返回估算信息。
+        景点门票价格信息字符串，包括景点名称、地址、电话等。如果API不可用，返回估算信息。
     """
     try:
-        # 尝试使用天聚数行API
-        tianapi_key = os.getenv("TIANAPI_KEY") or config.get("attraction.api_key", "")
-        
-        if tianapi_key and city:
-            try:
-                # 天聚数行旅游景区API
-                tianapi_url = "http://api.tianapi.com/lvyou/index"
-                tianapi_params = {
-                    "key": tianapi_key,
-                    "word": city
-                }
-                
-                tianapi_response = requests.get(tianapi_url, params=tianapi_params, timeout=5)
-                if tianapi_response.status_code == 200:
-                    tianapi_data = tianapi_response.json()
-                    if tianapi_data.get("code") == 200 and tianapi_data.get("newslist"):
-                        attractions = tianapi_data["newslist"]
-                        
-                        # 如果指定了景点名称，优先匹配
-                        if attraction_name:
-                            matched = [a for a in attractions if attraction_name in a.get("name", "")]
-                            if matched:
-                                attractions = matched[:5]  # 取前5个匹配的
-                            else:
-                                attractions = attractions[:5]  # 如果没有匹配，取前5个
-                        else:
-                            attractions = attractions[:10]  # 取前10个
-                        
-                        if attractions:
-                            result = f"{city}的景点门票信息：\n\n"
-                            for i, attr in enumerate(attractions, 1):
-                                name = attr.get("name", "未知景点")
-                                level = attr.get("level", "")
-                                address = attr.get("address", "")
-                                ticket = attr.get("ticket", "")
-                                open_time = attr.get("opentime", "")
-                                
-                                result += f"{i}. {name}"
-                                if level:
-                                    result += f"（{level}）"
-                                result += "\n"
-                                
-                                if address:
-                                    result += f"   地址：{address}\n"
-                                if ticket:
-                                    result += f"   门票：{ticket}\n"
-                                if open_time:
-                                    result += f"   开放时间：{open_time}\n"
-                                result += "\n"
-                            
-                            result += "提示：门票价格可能因季节、优惠政策等因素有所变化，建议通过官方渠道或携程、去哪儿等平台查询实时价格。"
-                            return result
-            except Exception as e:
-                # API调用失败，使用估算
-                pass
-        
-        # 尝试使用高德地图POI API
+        # 使用高德地图POI API
         amap_key = os.getenv("AMAP_API_KEY") or config.get("transport.api_key", "")
         
         if amap_key and city:
             try:
-                # 高德地图POI搜索API
+                # 高德地图POI搜索API - 优化关键字搜索策略
                 poi_url = "https://restapi.amap.com/v3/place/text"
+                
+                # 构建搜索关键词：如果指定了景点名称，使用精确搜索；否则结合兴趣偏好
+                if attraction_name:
+                    # 精确搜索指定景点
+                    search_keywords = f"{city}{attraction_name}"
+                else:
+                    # 根据兴趣偏好构建关键词
+                    if interests:
+                        interest_keywords = {
+                            "历史": "历史景点",
+                            "文化": "文化景点",
+                            "自然": "自然风景",
+                            "美食": "美食街",
+                            "娱乐": "主题公园",
+                            "博物馆": "博物馆"
+                        }
+                        interest_word = interest_keywords.get(interests, "景点")
+                        search_keywords = f"{city}{interest_word}"
+                    else:
+                        search_keywords = f"{city}景点"
+                
                 poi_params = {
                     "key": amap_key,
-                    "keywords": attraction_name if attraction_name else f"{city}景点",
+                    "keywords": search_keywords,
                     "city": city,
+                    "citylimit": "true",  # 限制在指定城市内搜索，提高精度
                     "types": "110000",  # 风景名胜
                     "offset": 10,
                     "page": 1,
-                    "extensions": "all"
+                    "extensions": "all"  # 返回详细信息
                 }
                 
-                poi_response = requests.get(poi_url, params=poi_params, timeout=5)
+                poi_response = _amap_limiter.get(poi_url, params=poi_params, timeout=5)
                 if poi_response.status_code == 200:
                     poi_data = poi_response.json()
                     if poi_data.get("status") == "1" and poi_data.get("pois"):
                         pois = poi_data["pois"][:10]  # 取前10个
+                        _tool_logger.log_api_call("高德地图POI API", "成功", f"关键字'{search_keywords}'，获取{city}景点信息，共{len(pois)}个")
                         
-                        result = f"{city}的景点信息：\n\n"
+                        result = f"{city}的景点信息"
+                        if attraction_name:
+                            result += f"（搜索：{attraction_name}）"
+                        result += "：\n\n"
+                        
                         for i, poi in enumerate(pois, 1):
                             name = poi.get("name", "未知景点")
                             address = poi.get("address", "")
-                            location = poi.get("location", "")
                             tel = poi.get("tel", "")
+                            business_area = poi.get("business_area", "")  # 商圈/区域
                             
                             result += f"{i}. {name}\n"
                             if address:
                                 result += f"   地址：{address}\n"
+                            if business_area:
+                                result += f"   区域：{business_area}\n"
                             if tel:
                                 result += f"   电话：{tel}\n"
                             result += "\n"
                         
-                        result += "提示：门票价格信息请通过官方渠道或携程、去哪儿等平台查询。"
+                        result += "提示：门票价格信息请通过官方渠道或携程、去哪儿等平台查询实时价格。"
                         return result
             except Exception as e:
                 # API调用失败，使用估算
-                pass
+                _tool_logger.log_api_call("高德地图POI API", "失败", str(e)[:100])
+                _tool_logger.log_fallback("景点信息", "高德地图POI API调用失败，使用智能估算")
+        else:
+            _tool_logger.log_api_call("高德地图POI API", "跳过", "API密钥未配置")
+            _tool_logger.log_fallback("景点信息", "高德地图POI API密钥未配置，使用智能估算")
         
-        # 如果所有API都不可用，使用基于城市和兴趣的估算
+        # 如果API不可用，使用基于城市和兴趣的估算
         return _estimate_attraction_tickets(city, attraction_name, interests)
         
     except Exception as e:
+        _tool_logger.log_api_call("景点门票工具", "异常", str(e)[:100])
+        _tool_logger.log_fallback("景点信息", f"异常错误: {str(e)[:100]}")
         return f"获取景点门票信息时出错: {str(e)}。建议：{city}的主要景点门票通常在50-200元之间，具体价格请查询官方渠道。"
 
 

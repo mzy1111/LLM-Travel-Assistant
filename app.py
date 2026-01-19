@@ -6,12 +6,17 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context
 from src.agent.travel_agent import TravelAgent
 from src.config import config
 from src.models.user import user_manager
 from functools import wraps
 import uuid
+import json
+import queue
+import threading
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.schema import AgentAction
 
 app = Flask(__name__)
 app.secret_key = 'travel-assistant-secret-key-change-in-production'
@@ -176,6 +181,377 @@ def chat():
             'user_id': user_id,
             'session_id': session_id
         })
+    except Exception as e:
+        return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
+
+
+@app.route('/api/chat/stream', methods=['POST'])
+def chat_stream():
+    """处理流式聊天请求（使用Server-Sent Events）"""
+    try:
+        # 检查登录状态
+        if 'user_id' not in session:
+            return jsonify({'error': '请先登录'}), 401
+        
+        data = request.json
+        user_input = data.get('message', '').strip()
+        travel_info = data.get('travelInfo', {})
+        
+        # 获取用户ID
+        user_id = session.get('user_id')
+        session_id = session.get('session_id')
+        
+        if not user_input:
+            return jsonify({'error': '消息不能为空'}), 400
+        
+        # 获取或创建Agent
+        agent, error = get_or_create_agent(user_id=user_id, session_id=session_id)
+        if error:
+            return jsonify({'error': f'Agent初始化失败: {error}'}), 500
+        
+        # 设置旅行信息
+        if travel_info:
+            agent.set_travel_info(travel_info)
+        elif 'travel_info' in session:
+            agent.set_travel_info(session['travel_info'])
+        
+        # 创建队列用于在线程间传递工具执行结果
+        result_queue = queue.Queue()
+        
+        # 创建回调处理器，用于监听工具执行
+        class ToolCallbackHandler(BaseCallbackHandler):
+            def __init__(self, result_queue):
+                self.result_queue = result_queue
+                self.current_tool = None
+                
+            def on_agent_action(self, action: AgentAction, **kwargs) -> None:
+                """工具调用开始"""
+                tool_name = action.tool
+                tool_names = {
+                    "query_weather_agent": "天气查询",
+                    "query_transport_agent": "交通路线",
+                    "query_hotel_agent": "酒店价格",
+                    "query_attraction_agent": "景点信息",
+                    "query_planning_agent": "行程规划",
+                    "query_recommendation_agent": "个性化推荐"
+                }
+                friendly_name = tool_names.get(tool_name, tool_name)
+                self.result_queue.put({
+                    'type': 'tool_start',
+                    'tool': tool_name,
+                    'message': f'正在查询{friendly_name}...'
+                })
+                self.current_tool = tool_name
+                
+            def on_tool_end(self, output: str, **kwargs) -> None:
+                """工具执行完成"""
+                if self.current_tool:
+                    tool_names = {
+                        "query_weather_agent": "天气",
+                        "query_transport_agent": "交通路线",
+                        "query_hotel_agent": "酒店价格",
+                        "query_attraction_agent": "景点信息",
+                        "query_planning_agent": "行程规划",
+                        "query_recommendation_agent": "推荐"
+                    }
+                    friendly_name = tool_names.get(self.current_tool, self.current_tool)
+                    # 简化输出，只显示前200字符
+                    summary = output[:200] + "..." if len(output) > 200 else output
+                    self.result_queue.put({
+                        'type': 'tool_end',
+                        'tool': self.current_tool,
+                        'message': f'✓ {friendly_name}查询完成',
+                        'summary': summary
+                    })
+                    self.current_tool = None
+        
+        callback_handler = ToolCallbackHandler(result_queue)
+        
+        # 在线程中执行Agent聊天（避免阻塞SSE连接）
+        def run_agent():
+            try:
+                # 准备输入
+                import hashlib
+                travel_info_str = str(sorted(agent.travel_info.items()))
+                current_travel_info_hash = hashlib.md5(travel_info_str.encode()).hexdigest()
+                
+                if agent.travel_info and (not agent.travel_info_added_to_conversation or current_travel_info_hash != agent.last_travel_info_hash):
+                    travel_context = agent._format_travel_info()
+                    combined_input = f"{travel_context}\n\n用户问题: {user_input}"
+                    agent.travel_info_added_to_conversation = True
+                    agent.last_travel_info_hash = current_travel_info_hash
+                else:
+                    combined_input = user_input
+                
+                # 使用回调执行Agent（直接传递回调列表）
+                response = agent.agent_executor.invoke(
+                    {"input": combined_input},
+                    config={"callbacks": [callback_handler]}
+                )
+                output = response.get("output", "抱歉，我无法处理您的请求。")
+                
+                # 发送最终结果
+                result_queue.put({
+                    'type': 'final',
+                    'message': output
+                })
+            except Exception as e:
+                error_msg = str(e)[:200] if len(str(e)) > 200 else str(e)
+                result_queue.put({
+                    'type': 'error',
+                    'message': f'处理请求时出错: {error_msg}'
+                })
+            finally:
+                # 发送结束标记
+                result_queue.put({'type': 'done'})
+        
+        # 启动Agent执行线程
+        agent_thread = threading.Thread(target=run_agent)
+        agent_thread.daemon = True
+        agent_thread.start()
+        
+        # 生成SSE响应
+        def generate():
+            while True:
+                try:
+                    # 从队列获取结果（超时1秒）
+                    try:
+                        result = result_queue.get(timeout=1)
+                    except queue.Empty:
+                        # 超时，发送心跳保持连接
+                        yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                        continue
+                    
+                    # 检查是否完成
+                    if result['type'] == 'done':
+                        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                        break
+                    
+                    # 发送结果
+                    yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
+                    
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                    break
+        
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'  # 禁用nginx缓冲
+            }
+        )
+        
+    except Exception as e:
+        return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
+
+
+@app.route('/api/generate-plan/stream', methods=['POST'])
+def generate_plan_stream():
+    """流式生成旅行规划（使用Server-Sent Events）"""
+    try:
+        # 检查登录状态
+        if 'user_id' not in session:
+            return jsonify({'error': '请先登录'}), 401
+        
+        data = request.json
+        travel_info = data.get('travelInfo', {})
+        
+        # 验证必填字段
+        if not travel_info.get('departureDate') or not travel_info.get('returnDate'):
+            return jsonify({'error': '出发日期和返回日期不能为空'}), 400
+        
+        # 保存旅行信息到session
+        session['travel_info'] = travel_info
+        
+        # 获取用户ID
+        user_id = session.get('user_id')
+        session_id = session.get('session_id')
+        if not user_id and not session_id:
+            session_id = str(uuid.uuid4())
+            session['session_id'] = session_id
+        
+        # 获取或创建Agent
+        agent, error = get_or_create_agent(user_id=user_id, session_id=session_id)
+        if error:
+            return jsonify({'error': f'Agent初始化失败: {error}'}), 500
+        
+        # 设置旅行信息
+        agent.set_travel_info(travel_info)
+        
+        # 构建规划请求（与generate_plan相同）
+        from datetime import datetime
+        try:
+            departure = datetime.strptime(travel_info['departureDate'], '%Y-%m-%d')
+            return_date = datetime.strptime(travel_info['returnDate'], '%Y-%m-%d')
+            days = (return_date - departure).days + 1
+        except:
+            days = 7
+        
+        destination = travel_info.get('destination', '')
+        departure_city = travel_info.get('departureCity', '')
+        budget = travel_info.get('budget', '')
+        preferences_parts = []
+        
+        if travel_info.get('travelStyle'):
+            preferences_parts.append(f"旅行风格：{travel_info['travelStyle']}")
+        if travel_info.get('interests'):
+            preferences_parts.append(f"兴趣偏好：{travel_info['interests']}")
+        if travel_info.get('hotelPreference'):
+            preferences_parts.append(f"住宿偏好：{travel_info['hotelPreference']}")
+        if travel_info.get('transportMode'):
+            preferences_parts.append(f"出行方式：{travel_info['transportMode']}")
+        
+        preferences = '，'.join(preferences_parts) if preferences_parts else None
+        
+        if destination:
+            user_request = f"请为我规划一个{days}天的{destination}旅行行程"
+        else:
+            user_request = f"请为我规划一个{days}天的旅行行程"
+        
+        if budget:
+            user_request += f"，预算{budget}元"
+        if preferences:
+            user_request += f"，偏好：{preferences}"
+        user_request += "。\n\n重要提示：\n"
+        
+        if destination:
+            user_request += f"1. 请先使用 get_weather_info 工具查询出发日期和{destination}的天气信息\n"
+            if travel_info.get('interests'):
+                user_request += f"2. 请使用 get_attraction_ticket_prices 工具查询{destination}的景点门票价格（根据兴趣偏好：{travel_info.get('interests')}）\n"
+        else:
+            user_request += "1. 如果用户指定了目的地，请使用 get_weather_info 工具查询天气信息\n"
+        
+        if travel_info.get('hotelPreference') and destination:
+            user_request += f"{'3' if destination and travel_info.get('interests') else '2'}. 请使用 get_hotel_prices 工具查询酒店价格信息，以便提供准确的预算估算\n"
+        
+        if departure_city and destination and travel_info.get('transportMode'):
+            step_num = 3 if destination and (travel_info.get('interests') or travel_info.get('hotelPreference')) else 2
+            user_request += f"{step_num}. 请使用 get_transport_route 工具查询从{departure_city}到{destination}的{travel_info.get('transportMode')}路线和费用\n"
+        
+        user_request += f"{'5' if (destination and travel_info.get('interests')) or (departure_city and destination and travel_info.get('transportMode')) or travel_info.get('hotelPreference') else '2'}. 然后使用 plan_travel_itinerary 工具生成详细行程，该工具会自动集成所有查询到的信息\n"
+        
+        # 创建队列用于在线程间传递工具执行结果
+        result_queue = queue.Queue()
+        
+        # 创建回调处理器
+        class ToolCallbackHandler(BaseCallbackHandler):
+            def __init__(self, result_queue):
+                self.result_queue = result_queue
+                self.current_tool = None
+                
+            def on_agent_action(self, action: AgentAction, **kwargs) -> None:
+                """工具调用开始"""
+                tool_name = action.tool
+                tool_names = {
+                    "query_weather_agent": "天气查询",
+                    "query_transport_agent": "交通路线",
+                    "query_hotel_agent": "酒店价格",
+                    "query_attraction_agent": "景点信息",
+                    "query_planning_agent": "行程规划",
+                    "query_recommendation_agent": "个性化推荐"
+                }
+                friendly_name = tool_names.get(tool_name, tool_name)
+                self.result_queue.put({
+                    'type': 'tool_start',
+                    'tool': tool_name,
+                    'message': f'正在查询{friendly_name}...'
+                })
+                self.current_tool = tool_name
+                
+            def on_tool_end(self, output: str, **kwargs) -> None:
+                """工具执行完成"""
+                if self.current_tool:
+                    tool_names = {
+                        "query_weather_agent": "天气",
+                        "query_transport_agent": "交通路线",
+                        "query_hotel_agent": "酒店价格",
+                        "query_attraction_agent": "景点信息",
+                        "query_planning_agent": "行程规划",
+                        "query_recommendation_agent": "推荐"
+                    }
+                    friendly_name = tool_names.get(self.current_tool, self.current_tool)
+                    summary = output[:200] + "..." if len(output) > 200 else output
+                    self.result_queue.put({
+                        'type': 'tool_end',
+                        'tool': self.current_tool,
+                        'message': f'✓ {friendly_name}查询完成',
+                        'summary': summary
+                    })
+                    self.current_tool = None
+        
+        callback_handler = ToolCallbackHandler(result_queue)
+        
+        # 在线程中执行Agent
+        def run_agent():
+            try:
+                import hashlib
+                travel_info_str = str(sorted(agent.travel_info.items()))
+                current_travel_info_hash = hashlib.md5(travel_info_str.encode()).hexdigest()
+                
+                if agent.travel_info and (not agent.travel_info_added_to_conversation or current_travel_info_hash != agent.last_travel_info_hash):
+                    travel_context = agent._format_travel_info()
+                    combined_input = f"{travel_context}\n\n用户问题: {user_request}"
+                    agent.travel_info_added_to_conversation = True
+                    agent.last_travel_info_hash = current_travel_info_hash
+                else:
+                    combined_input = user_request
+                
+                # 使用回调执行Agent（直接传递回调列表）
+                response = agent.agent_executor.invoke(
+                    {"input": combined_input},
+                    config={"callbacks": [callback_handler]}
+                )
+                output = response.get("output", "抱歉，我无法处理您的请求。")
+                
+                result_queue.put({
+                    'type': 'final',
+                    'message': output
+                })
+            except Exception as e:
+                error_msg = str(e)[:200] if len(str(e)) > 200 else str(e)
+                result_queue.put({
+                    'type': 'error',
+                    'message': f'处理请求时出错: {error_msg}'
+                })
+            finally:
+                result_queue.put({'type': 'done'})
+        
+        # 启动线程
+        agent_thread = threading.Thread(target=run_agent)
+        agent_thread.daemon = True
+        agent_thread.start()
+        
+        # 生成SSE响应
+        def generate():
+            while True:
+                try:
+                    try:
+                        result = result_queue.get(timeout=1)
+                    except queue.Empty:
+                        yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                        continue
+                    
+                    if result['type'] == 'done':
+                        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                        break
+                    
+                    yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
+                    
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                    break
+        
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+        
     except Exception as e:
         return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
 

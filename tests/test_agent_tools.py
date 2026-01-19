@@ -203,28 +203,41 @@ class TestAttractionTool(unittest.TestCase):
         self.city = "北京"
         self.interests = "历史、文化"
     
-    @patch('src.agent.tools.requests.get')
-    def test_attraction_api_success(self, mock_get):
-        """测试景点API调用成功"""
-        # 模拟天聚数行API响应
+    @patch('src.agent.tools._amap_limiter')
+    def test_attraction_api_success(self, mock_limiter):
+        """测试景点API调用成功（使用高德地图POI API）"""
+        # 模拟高德地图POI API响应
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "code": 200,
-            "newslist": [
+            "status": "1",
+            "info": "OK",
+            "count": "10",
+            "pois": [
                 {
-                    "name": "故宫",
-                    "level": "AAAAA级景区",
-                    "address": "北京市东城区",
-                    "ticket": "60元",
-                    "opentime": "08:30-17:00"
+                    "name": "故宫博物院",
+                    "address": "北京市东城区景山前街4号",
+                    "location": "116.397026,39.918058",
+                    "tel": "010-85007421",
+                    "business_area": "天安门",
+                    "type": "风景名胜;风景名胜相关;博物馆"
+                },
+                {
+                    "name": "天坛公园",
+                    "address": "北京市东城区天坛路甲1号",
+                    "location": "116.407394,39.882335",
+                    "tel": "010-67028866",
+                    "business_area": "天坛",
+                    "type": "风景名胜;风景名胜相关;公园广场"
                 }
             ]
         }
-        mock_get.return_value = mock_response
+        mock_limiter.get.return_value = mock_response
         
         # 设置API密钥
-        os.environ["TIANAPI_KEY"] = "test_key"
+        os.environ["AMAP_API_KEY"] = "test_key"
+        if "TIANAPI_KEY" in os.environ:
+            del os.environ["TIANAPI_KEY"]
         
         # 调用工具（使用字典参数）
         result = get_attraction_ticket_prices.invoke({

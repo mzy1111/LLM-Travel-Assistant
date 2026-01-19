@@ -18,24 +18,18 @@ weather:
   # 注册地址：https://lbs.amap.com/
   # 免费额度：每天30万次调用（个人开发者）
 
-# 酒店API配置（携程开放平台）
+# 酒店API配置（飞猪开放平台）
 hotel:
-  api_key: ""  # 在env文件中设置 CTRIP_API_KEY
-  api_secret: ""  # 在env文件中设置 CTRIP_API_SECRET
-  # 注册地址：https://open.ctrip.com/
-  # 注意：需要商业合作，当前使用智能估算方案
+  api_key: ""  # 在env文件中设置 FLIGGY_APP_KEY
+  api_secret: ""  # 在env文件中设置 FLIGGY_APP_SECRET
+  # 注册地址：https://open.fliggy.com/
+  # 注意：需要注册开发者账号并申请API权限
 
-# 交通和天气API配置（高德地图，共用同一个密钥）
+# 交通、天气和景点API配置（高德地图，共用同一个密钥）
 transport:
-  api_key: ""  # 在env文件中设置 AMAP_API_KEY（同时用于交通和天气查询）
+  api_key: ""  # 在env文件中设置 AMAP_API_KEY（同时用于交通、天气和景点查询）
   # 注册地址：https://lbs.amap.com/
   # 免费额度：每天30万次调用（个人开发者）
-
-# 景点API配置（天聚数行）
-attraction:
-  api_key: ""  # 在env文件中设置 TIANAPI_KEY
-  # 注册地址：https://www.tianapi.com/
-  # 免费额度：每天100次调用（个人开发者）
 
 # 工具配置
 tools:

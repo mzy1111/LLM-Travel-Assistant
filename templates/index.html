@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智能旅行助手</title>
+    <!-- 引入 marked.js 用于 Markdown 解析 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -219,6 +221,128 @@
             word-wrap: break-word;
             line-height: 1.5;
             white-space: pre-wrap;
+        }
+
+        /* Markdown 样式 */
+        .message-content h1,
+        .message-content h2,
+        .message-content h3,
+        .message-content h4,
+        .message-content h5,
+        .message-content h6 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+
+        .message-content h1 {
+            font-size: 1.5em;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+        }
+
+        .message-content h2 {
+            font-size: 1.3em;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 6px;
+        }
+
+        .message-content h3 {
+            font-size: 1.1em;
+        }
+
+        .message-content ul,
+        .message-content ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+
+        .message-content li {
+            margin: 4px 0;
+        }
+
+        .message-content p {
+            margin: 8px 0;
+        }
+
+        .message-content code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .message-content pre {
+            background: #f4f4f4;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+
+        .message-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .message-content blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 16px;
+            margin: 12px 0;
+            color: #666;
+            font-style: italic;
+        }
+
+        .message-content strong {
+            font-weight: 600;
+        }
+
+        .message-content em {
+            font-style: italic;
+        }
+
+        /* 工具更新样式 */
+        .tool-update {
+            padding: 8px 12px;
+            margin: 6px 0;
+            background: #f0f4ff;
+            border-left: 3px solid #667eea;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #555;
+            transition: all 0.3s;
+        }
+
+        .tool-update.success {
+            background: #e8f5e9;
+            border-left-color: #4caf50;
+        }
+
+        .tool-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+
+        .tool-status.success {
+            color: #2e7d32;
+        }
+
+        .tool-summary {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+            font-size: 12px;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        .message-separator {
+            margin: 12px 0;
+            border: none;
+            border-top: 1px solid #e0e0e0;
         }
 
         .message.user .message-content {
@@ -530,14 +654,11 @@
 
                 <div class="form-group">
                     <label for="transportMode">出行方式</label>
-                    <select id="transportMode" name="transportMode">
-                        <option value="">请选择</option>
-                        <option value="飞机">飞机</option>
-                        <option value="高铁">高铁</option>
-                        <option value="火车">火车</option>
-                        <option value="自驾" selected>自驾</option>
-                        <option value="大巴">大巴</option>
-                    </select>
+                    <input type="hidden" id="transportMode" name="transportMode" value="自驾">
+                    <div style="padding: 8px; background-color: #f5f5f5; border-radius: 4px; color: #666;">
+                        <span style="font-weight: 500;">自驾</span>
+                        <small style="display: block; margin-top: 4px; color: #999;">当前仅支持自驾方式</small>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -607,9 +728,8 @@
     </div>
 
     <script>
-        const chatContainer = document.getElementById('chatContainer');
-        const messageInput = document.getElementById('messageInput');
-        const sendButton = document.getElementById('sendButton');
+        // 在DOMContentLoaded后再获取元素引用
+        let chatContainer, messageInput, sendButton;
         let travelInfo = {};
 
         // 省市区数据（简化版，包含主要城市）
@@ -647,21 +767,41 @@
 
         // 初始化省份选择
         function initProvinces() {
-            const provinces = Object.keys(regionData);
-            const departureProvince = document.getElementById('departureProvince');
-            const destinationProvince = document.getElementById('destinationProvince');
-            
-            provinces.forEach(province => {
-                const option1 = document.createElement('option');
-                option1.value = province;
-                option1.textContent = province;
-                departureProvince.appendChild(option1);
+            try {
+                const provinces = Object.keys(regionData);
+                const departureProvince = document.getElementById('departureProvince');
+                const destinationProvince = document.getElementById('destinationProvince');
                 
-                const option2 = document.createElement('option');
-                option2.value = province;
-                option2.textContent = province;
-                destinationProvince.appendChild(option2);
-            });
+                if (!departureProvince || !destinationProvince) {
+                    console.error('无法找到省份选择元素');
+                    return;
+                }
+                
+                if (!regionData || provinces.length === 0) {
+                    console.error('regionData数据为空');
+                    return;
+                }
+                
+                // 清空现有选项（保留第一个"请选择省"）
+                departureProvince.innerHTML = '<option value="">请选择省</option>';
+                destinationProvince.innerHTML = '<option value="">请选择省</option>';
+                
+                provinces.forEach(province => {
+                    const option1 = document.createElement('option');
+                    option1.value = province;
+                    option1.textContent = province;
+                    departureProvince.appendChild(option1);
+                    
+                    const option2 = document.createElement('option');
+                    option2.value = province;
+                    option2.textContent = province;
+                    destinationProvince.appendChild(option2);
+                });
+                
+                console.log(`成功初始化省份列表，共${provinces.length}个省份`);
+            } catch (error) {
+                console.error('初始化省份列表失败:', error);
+            }
         }
 
         // 更新出发地城市列表
@@ -777,10 +917,50 @@
             };
         }
 
-        // 页面加载时初始化省份
-        window.addEventListener('DOMContentLoaded', function() {
-            initProvinces();
-        });
+        // 页面加载时初始化
+        function initPage() {
+            // 获取元素引用
+            chatContainer = document.getElementById('chatContainer');
+            messageInput = document.getElementById('messageInput');
+            sendButton = document.getElementById('sendButton');
+            
+            // 初始化省份列表
+            if (typeof initProvinces === 'function') {
+                initProvinces();
+            } else {
+                console.error('initProvinces函数未定义');
+            }
+            
+            // 如果有初始查询，自动发送
+            {% if initial_query %}
+            if (messageInput) {
+                messageInput.value = '{{ initial_query }}';
+                setTimeout(() => {
+                    sendMessage();
+                }, 500);
+            }
+            {% endif %}
+        }
+        
+        // 使用多种方式确保初始化执行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initPage);
+        } else {
+            // DOM已经加载完成，立即执行
+            initPage();
+        }
+        
+        // 备用方案：延迟执行
+        setTimeout(function() {
+            const departureProvince = document.getElementById('departureProvince');
+            const destinationProvince = document.getElementById('destinationProvince');
+            if (departureProvince && departureProvince.options.length <= 1) {
+                console.log('检测到省份列表为空，重新初始化...');
+                if (typeof initProvinces === 'function') {
+                    initProvinces();
+                }
+            }
+        }, 100);
 
         // 应用旅行信息并生成规划
         async function applyTravelInfo() {
@@ -814,12 +994,27 @@
                 applyBtn.textContent = '生成中...';
             }
             
-            // 在聊天区域显示加载提示
-            showLoading();
+            // 移除欢迎消息
+            const welcomeMsg = chatContainer.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+            
+            // 创建助手消息容器（用于流式更新）
+            const assistantMessageDiv = document.createElement('div');
+            assistantMessageDiv.className = 'message assistant';
+            const assistantContentDiv = document.createElement('div');
+            assistantContentDiv.className = 'message-content';
+            assistantMessageDiv.appendChild(assistantContentDiv);
+            chatContainer.appendChild(assistantMessageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            let finalResponse = '';
+            let toolUpdates = [];
             
             try {
-                // 发送请求到后端生成规划
-                const response = await fetch('/api/generate-plan', {
+                // 使用流式API
+                const response = await fetch('/api/generate-plan/stream', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -827,54 +1022,121 @@
                     body: JSON.stringify({ travelInfo: info })
                 });
                 
-                const data = await response.json();
-                
-                hideLoading();
-                
-                if (response.ok) {
-                    if (data.success) {
-                        // 显示成功提示
-                        if (badge) {
-                            badge.textContent = '✓ 旅行规划已生成！';
-                            badge.style.background = '#d4edda';
-                            badge.style.color = '#155724';
-                        }
-                        
-                        // 显示规划结果
-                        displayTravelPlan(data.plan, data.travelInfo, data.days);
-                    } else {
-                        // 虽然请求成功，但生成失败（可能是API错误）
-                        if (badge) {
-                            badge.textContent = '✗ 生成失败';
-                            badge.style.background = '#f8d7da';
-                            badge.style.color = '#721c24';
-                        }
-                        
-                        // 仍然显示规划卡片，但内容显示错误信息
-                        if (data.plan) {
-                            displayTravelPlan(data.plan, data.travelInfo, data.days);
-                        } else {
-                            addMessage('生成规划失败: ' + (data.error || '未知错误'), false);
-                        }
-                    }
-                } else {
-                    // HTTP错误
-                    if (badge) {
-                        badge.textContent = '✗ ' + (data.error || '生成失败');
-                        badge.style.background = '#f8d7da';
-                        badge.style.color = '#721c24';
-                    }
-                    addMessage('生成规划失败: ' + (data.error || '未知错误'), false);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    // SSE格式：每行以"data: "开头，两个换行符\n\n分隔消息
+                    // 先按两个换行符分割成消息块
+                    const messages = buffer.split('\n\n');
+                    buffer = messages.pop() || ''; // 保留最后一个不完整的消息块
+                    
+                    let shouldBreak = false;
+                    for (const messageBlock of messages) {
+                        // 每个消息块可能有多行，找到"data: "开头的行
+                        const lines = messageBlock.split('\n');
+                        for (const line of lines) {
+                            if (line.trim().startsWith('data: ')) {
+                                try {
+                                    const jsonStr = line.slice(6).trim(); // 去掉"data: "前缀
+                                    if (!jsonStr) continue; // 跳过空行
+                                    const data = JSON.parse(jsonStr);
+                                    
+                                    // 忽略heartbeat
+                                    if (data.type === 'heartbeat') continue;
+                                    
+                                    if (data.type === 'tool_start') {
+                                        const toolUpdate = document.createElement('div');
+                                        toolUpdate.className = 'tool-update';
+                                        toolUpdate.innerHTML = `<span class="tool-status">🔄 ${data.message}</span>`;
+                                        assistantContentDiv.appendChild(toolUpdate);
+                                        toolUpdates.push({element: toolUpdate, type: 'start', tool: data.tool});
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                        
+                                    } else if (data.type === 'tool_end') {
+                                        const toolInfo = toolUpdates.find(t => t.tool === data.tool && t.type === 'start');
+                                        if (toolInfo) {
+                                            toolInfo.element.innerHTML = `<span class="tool-status success">✓ ${data.message}</span>`;
+                                            toolInfo.element.className = 'tool-update success';
+                                            if (data.summary) {
+                                                const summaryDiv = document.createElement('div');
+                                                summaryDiv.className = 'tool-summary';
+                                                summaryDiv.textContent = data.summary;
+                                                toolInfo.element.appendChild(summaryDiv);
+                                            }
+                                            toolInfo.type = 'end';
+                                        }
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                        
+                                    } else if (data.type === 'final') {
+                                        finalResponse = data.message;
+                                        
+                                    } else if (data.type === 'error') {
+                                        finalResponse = `错误: ${data.message}`;
+                                        
+                                    } else if (data.type === 'done') {
+                                        // 完成标记
+                                        shouldBreak = true;
+                                        break;
+                                    }
+                                } catch (e) {
+                                    console.error('解析SSE数据失败:', e, line);
+                                }
+                            }
+                        }
+                        if (shouldBreak) break;
+                    }
+                    if (shouldBreak) break;
+                }
+                
+                // 显示最终响应
+                if (finalResponse) {
+                    if (toolUpdates.length > 0) {
+                        const separator = document.createElement('hr');
+                        separator.className = 'message-separator';
+                        assistantContentDiv.appendChild(separator);
+                    }
+                    
+                    if (typeof marked !== 'undefined') {
+                        marked.setOptions({
+                            breaks: true,
+                            gfm: true,
+                        });
+                        const existingContent = assistantContentDiv.innerHTML;
+                        assistantContentDiv.innerHTML = existingContent + marked.parse(finalResponse);
+                    } else {
+                        const finalDiv = document.createElement('div');
+                        finalDiv.className = 'final-response';
+                        finalDiv.textContent = finalResponse;
+                        assistantContentDiv.appendChild(finalDiv);
+                    }
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+                
+                // 更新按钮状态
+                if (badge && finalResponse) {
+                    badge.textContent = '✓ 旅行规划已生成！';
+                    badge.style.background = '#d4edda';
+                    badge.style.color = '#155724';
+                }
+                
             } catch (error) {
                 console.error('生成规划错误:', error);
-                hideLoading();
                 if (badge) {
                     badge.textContent = '✗ 网络错误';
                     badge.style.background = '#f8d7da';
                     badge.style.color = '#721c24';
                 }
-                addMessage('网络错误: ' + error.message, false);
+                assistantContentDiv.innerHTML = `<div class="error">网络错误: ${error.message}</div>`;
             } finally {
                 // 恢复按钮
                 if (applyBtn) {
@@ -934,6 +1196,17 @@
                 return formatErrorMessage(plan);
             }
             
+            // 使用 marked.js 解析 Markdown（如果可用）
+            if (typeof marked !== 'undefined') {
+                // 配置 marked 选项
+                marked.setOptions({
+                    breaks: true,  // 支持换行
+                    gfm: true,     // 支持 GitHub Flavored Markdown
+                });
+                return marked.parse(plan);
+            }
+            
+            // 如果 marked.js 不可用，使用原有的格式化逻辑
             // 将文本转换为HTML，保留格式
             let html = plan;
             
@@ -945,12 +1218,17 @@
             // 恢复换行
             html = html.replace(/\n/g, '<br>');
             
+            // 识别 Markdown 标题（#、##、###）
+            html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+            
             // 识别标题（以数字开头的行，如 "第1天"、"1."、"第一天"）
             html = html.replace(/(第[一二三四五六七八九十\d]+天[^<]*|<br>)(\d+[\.、]?\s*[^<]+)(<br>)/gi, 
                 '<h3 class="plan-day-title">$2</h3>');
             
             // 识别列表项（以 -、•、* 开头）
-            html = html.replace(/([-•*]\s*[^<]+)(<br>)/g, '<li>$1</li>');
+            html = html.replace(/([-•*]\s+[^<]+)(<br>)/g, '<li>$1</li>');
             
             // 将连续的列表项包装在ul中
             html = html.replace(/(<li>.*?<\/li>(?:<br>)?)+/g, function(match) {
@@ -1059,7 +1337,24 @@
             
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.textContent = content;
+            
+            // 如果是用户消息，使用纯文本；如果是助手消息，解析 Markdown
+            if (isUser) {
+                contentDiv.textContent = content;
+            } else {
+                // 使用 marked.js 解析 Markdown
+                if (typeof marked !== 'undefined') {
+                    // 配置 marked 选项
+                    marked.setOptions({
+                        breaks: true,  // 支持换行
+                        gfm: true,     // 支持 GitHub Flavored Markdown
+                    });
+                    contentDiv.innerHTML = marked.parse(content);
+                } else {
+                    // 如果 marked.js 未加载，使用纯文本
+                    contentDiv.textContent = content;
+                }
+            }
             
             messageDiv.appendChild(contentDiv);
             chatContainer.appendChild(messageDiv);
@@ -1106,37 +1401,151 @@
             // 禁用输入
             messageInput.disabled = true;
             sendButton.disabled = true;
-            showLoading();
-
+            
+            // 创建助手消息容器（用于流式更新）
+            const assistantMessageDiv = document.createElement('div');
+            assistantMessageDiv.className = 'message assistant';
+            const assistantContentDiv = document.createElement('div');
+            assistantContentDiv.className = 'message-content';
+            assistantMessageDiv.appendChild(assistantContentDiv);
+            chatContainer.appendChild(assistantMessageDiv);
+            
+            // 移除欢迎消息
+            const welcomeMsg = chatContainer.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+            
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            let finalResponse = '';
+            let toolUpdates = [];
+            
             try {
-                // 直接发送原始消息，旅行信息通过travelInfo字段单独传递
-                // 后端Agent会管理旅行信息，避免重复输入
-                const response = await fetch('/api/chat', { 
+                // 使用流式API（Server-Sent Events）
+                const response = await fetch('/api/chat/stream', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ 
-                        message: message,  // 只发送原始消息，不添加旅行信息
-                        travelInfo: travelInfo  // 旅行信息单独传递
+                    body: JSON.stringify({
+                        message: message,
+                        travelInfo: travelInfo
                     })
                 });
-
-                const data = await response.json();
                 
-                // 添加调试日志
-                console.log('从后端收到的响应:', data);
-                
-                hideLoading();
-
-                if (response.ok) {
-                    addMessage(data.response, false);
-                } else {
-                    addMessage(`错误: ${data.error || '未知错误'}`, false);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let shouldBreak = false;
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    // SSE格式：每行以"data: "开头，两个换行符\n\n分隔消息
+                    // 先按两个换行符分割成消息块
+                    const messages = buffer.split('\n\n');
+                    buffer = messages.pop() || ''; // 保留最后一个不完整的消息块
+                    
+                    for (const messageBlock of messages) {
+                        // 每个消息块可能有多行，找到"data: "开头的行
+                        const lines = messageBlock.split('\n');
+                        for (const line of lines) {
+                            if (line.trim().startsWith('data: ')) {
+                                try {
+                                    const jsonStr = line.slice(6).trim(); // 去掉"data: "前缀
+                                    if (!jsonStr) continue; // 跳过空行
+                                    const data = JSON.parse(jsonStr);
+                                    
+                                    // 忽略heartbeat
+                                    if (data.type === 'heartbeat') continue;
+                                    
+                                    if (data.type === 'tool_start') {
+                                        // 工具开始执行
+                                        const toolUpdate = document.createElement('div');
+                                        toolUpdate.className = 'tool-update';
+                                        toolUpdate.innerHTML = `<span class="tool-status">🔄 ${data.message}</span>`;
+                                        assistantContentDiv.appendChild(toolUpdate);
+                                        toolUpdates.push({element: toolUpdate, type: 'start', tool: data.tool});
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                        
+                                    } else if (data.type === 'tool_end') {
+                                        // 工具执行完成
+                                        const toolInfo = toolUpdates.find(t => t.tool === data.tool && t.type === 'start');
+                                        if (toolInfo) {
+                                            toolInfo.element.innerHTML = `<span class="tool-status success">✓ ${data.message}</span>`;
+                                            toolInfo.element.className = 'tool-update success';
+                                            if (data.summary) {
+                                                const summaryDiv = document.createElement('div');
+                                                summaryDiv.className = 'tool-summary';
+                                                summaryDiv.textContent = data.summary;
+                                                toolInfo.element.appendChild(summaryDiv);
+                                            }
+                                            toolInfo.type = 'end';
+                                        }
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                        
+                                    } else if (data.type === 'final') {
+                                        // 最终响应
+                                        finalResponse = data.message;
+                                        
+                                    } else if (data.type === 'error') {
+                                        // 错误
+                                        finalResponse = `错误: ${data.message}`;
+                                        
+                                    } else if (data.type === 'done') {
+                                        // 完成
+                                        shouldBreak = true;
+                                        break;
+                                    }
+                                    
+                                } catch (e) {
+                                    console.error('解析SSE数据失败:', e, line);
+                                }
+                            }
+                            if (shouldBreak) break;
+                        }
+                        if (shouldBreak) break;
+                    }
+                    if (shouldBreak) break;
+                }
+                
+                // 如果有最终响应，更新或添加消息内容
+                if (finalResponse) {
+                    // 检查是否已有工具更新，如果有则添加分隔线
+                    if (toolUpdates.length > 0) {
+                        const separator = document.createElement('hr');
+                        separator.className = 'message-separator';
+                        assistantContentDiv.appendChild(separator);
+                    }
+                    
+                    // 添加最终响应（使用Markdown解析）
+                    if (typeof marked !== 'undefined') {
+                        marked.setOptions({
+                            breaks: true,
+                            gfm: true,
+                        });
+                        assistantContentDiv.innerHTML = assistantContentDiv.innerHTML.replace(/<hr[^>]*>/i, '') + 
+                            (toolUpdates.length > 0 ? '<hr class="message-separator">' : '') +
+                            marked.parse(finalResponse);
+                    } else {
+                        const finalDiv = document.createElement('div');
+                        finalDiv.className = 'final-response';
+                        finalDiv.textContent = finalResponse;
+                        assistantContentDiv.appendChild(finalDiv);
+                    }
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+                
             } catch (error) {
-                hideLoading();
-                addMessage(`网络错误: ${error.message}`, false);
+                console.error('流式请求错误:', error);
+                assistantContentDiv.innerHTML = `<div class="error">网络错误: ${error.message}</div>`;
             } finally {
                 // 恢复输入
                 messageInput.disabled = false;
@@ -1218,19 +1627,26 @@
 
         // 页面加载时立即检查登录状态（在DOMContentLoaded之前）
         checkLoginStatus();
-
-        // 页面加载时聚焦输入框
-        messageInput.focus();
-
-        // 如果有初始查询，自动发送
-        {% if initial_query %}
-        window.addEventListener('DOMContentLoaded', function() {
-            messageInput.value = '{{ initial_query }}';
-            setTimeout(() => {
-                sendMessage();
-            }, 500);
-        });
-        {% endif %}
+        
+        // 最终备用初始化方案：延迟执行，确保DOM完全加载
+        setTimeout(function() {
+            const depProvince = document.getElementById('departureProvince');
+            const destProvince = document.getElementById('destinationProvince');
+            
+            // 如果省份列表为空（只有"请选择省"选项），重新初始化
+            if (depProvince && depProvince.options.length <= 1) {
+                console.log('延迟检查：省份列表为空，重新初始化...');
+                if (typeof initProvinces === 'function') {
+                    try {
+                        initProvinces();
+                    } catch (e) {
+                        console.error('延迟初始化失败:', e);
+                    }
+                } else {
+                    console.error('initProvinces函数未定义');
+                }
+            }
+        }, 500);
     </script>
 </body>
 </html>
