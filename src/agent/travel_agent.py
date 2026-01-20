@@ -117,25 +117,26 @@ class TravelAgent:
 - **天气Agent** (query_weather_agent)：专门负责天气查询，使用高德地图API获取准确天气信息
 - **交通Agent** (query_transport_agent)：专门负责交通路线规划，使用高德地图API精确计算自驾距离和时间
 - **酒店Agent** (query_hotel_agent)：专门负责酒店价格查询，提供准确的预算估算
-- **景点Agent** (query_attraction_agent)：专门负责景点信息查询和问答
-- **规划Agent** (query_planning_agent)：专门负责行程规划，整合所有信息生成详细行程
+- **景点Agent** (query_attraction_agent)：专门负责景点信息查询和问答，返回完整的景点列表信息（包括景点名称、地址、区域、人均消费等）
+- **规划Agent** (query_planning_agent)：专门负责行程规划，整合所有信息生成详细行程。该Agent会自动使用已查询的信息，避免重复查询
 - **推荐Agent** (query_recommendation_agent)：专门负责个性化推荐
 
 重要原则：
 - **理解用户需求**：仔细分析用户提供的旅行信息，包括出发日期、返回日期、出发地（可选）、目的地（可选）、预算、旅店偏好、出行方式、旅行风格和兴趣偏好等
 - **灵活处理可选信息**：出发地和目的地都是可选的。如果用户未提供目的地，应根据用户的偏好、预算和旅行天数推荐合适的目的地
 - **智能路由**：根据用户问题类型，调用相应的专门Agent：
-  - 天气相关问题 → query_weather_agent
-  - 交通路线问题 → query_transport_agent
-  - 酒店价格问题 → query_hotel_agent
-  - 景点相关问题 → query_attraction_agent
-  - 行程规划需求 → query_planning_agent
-  - 推荐需求 → query_recommendation_agent
+  - 天气相关问题 → query_weather_agent（只需调用一次）
+  - 交通路线问题 → query_transport_agent（只需调用一次）
+  - 酒店价格问题 → query_hotel_agent（只需调用一次）
+  - 景点相关问题 → query_attraction_agent（只需调用一次，该Agent会返回完整的景点列表）
+  - 行程规划需求 → query_planning_agent（只需调用一次）
+  - 推荐需求 → query_recommendation_agent（只需调用一次）
+- **避免重复调用**：每个专门Agent只需调用一次即可获得完整信息，不要重复调用同一个Agent
 - **综合查询**：当用户需要规划完整行程时，应该：
   1. 先调用 query_transport_agent 查询交通路线（如果有出发地和目的地）
   2. 调用 query_weather_agent 查询天气（如果有日期和目的地）
   3. 调用 query_hotel_agent 查询酒店价格（如果有日期、目的地和酒店偏好）
-  4. 调用 query_attraction_agent 查询景点信息（如果有目的地和兴趣偏好）
+  4. 调用 query_attraction_agent 查询景点信息（如果有目的地和兴趣偏好）**注意：只需调用一次，该Agent会返回完整的景点列表**
   5. 最后调用 query_planning_agent 整合所有信息生成详细行程
 - **个性化服务**：所有建议都应考虑用户的偏好和需求，提供真正个性化的服务
 - **专业详细**：提供详细、准确、实用的旅行建议，结合实时天气和价格信息
@@ -267,7 +268,7 @@ class TravelAgent:
         tools.append(Tool(
             name="query_attraction_agent",
             func=call_attraction_agent,
-            description="查询景点信息的专门Agent。当用户询问景点门票、景点信息、景点问答时使用。输入应该包含城市、景点名称或兴趣偏好。"
+            description="查询景点信息的专门Agent。当用户询问景点门票、景点信息、景点问答、景点推荐时使用。输入应该包含城市名称和可选的景点名称或兴趣偏好（如历史、文化、美食等）。该Agent会查询并返回完整的景点列表信息，包括景点名称、地址、区域、人均消费等。"
         ))
         
         # 规划Agent工具

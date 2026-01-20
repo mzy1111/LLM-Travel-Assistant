@@ -38,8 +38,8 @@ def get_weather_info(city: str, date: str) -> str:
         
         if not api_key:
             _tool_logger.log_api_call("高德地图天气API", "跳过", "API密钥未配置")
-            _tool_logger.log_fallback("天气信息", "API密钥未配置，使用默认估算")
-            return f"天气API密钥未配置。假设{city}在{date}的天气为：晴天，温度15-25°C，适合户外活动。"
+            _tool_logger.log_fallback("天气信息", "API密钥未配置")
+            return f"无法获取{city}在{date}的天气信息。天气API密钥未配置，请在环境变量中设置AMAP_API_KEY。"
         
         # 首先通过地理编码API获取城市编码（adcode）
         geo_url = "https://restapi.amap.com/v3/geocode/geo"
@@ -52,14 +52,14 @@ def get_weather_info(city: str, date: str) -> str:
         geo_response = _amap_limiter.get(geo_url, params=geo_params, timeout=5)
         if geo_response.status_code != 200:
             _tool_logger.log_api_call("高德地图地理编码API", "失败", f"HTTP {geo_response.status_code}")
-            _tool_logger.log_fallback("天气信息", f"地理编码失败，使用默认估算")
-            return f"无法获取{city}的地理位置信息。假设天气为：晴天，温度15-25°C，适合户外活动。"
+            _tool_logger.log_fallback("天气信息", f"地理编码失败")
+            return f"无法获取{city}在{date}的天气信息。地理编码API调用失败（HTTP {geo_response.status_code}），请稍后重试。"
         
         geo_data = geo_response.json()
         if geo_data.get("status") != "1" or not geo_data.get("geocodes"):
             _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到城市: {city}")
-            _tool_logger.log_fallback("天气信息", f"未找到城市，使用默认估算")
-            return f"未找到城市{city}。假设天气为：晴天，温度15-25°C，适合户外活动。"
+            _tool_logger.log_fallback("天气信息", f"未找到城市")
+            return f"无法获取{city}在{date}的天气信息。未找到城市{city}，请检查城市名称是否正确。"
         
         # 获取城市编码（adcode）
         adcode = geo_data["geocodes"][0].get("adcode", "")
@@ -68,8 +68,8 @@ def get_weather_info(city: str, date: str) -> str:
         
         if not adcode:
             _tool_logger.log_api_call("高德地图地理编码API", "失败", "无法获取城市编码")
-            _tool_logger.log_fallback("天气信息", "无法获取城市编码，使用默认估算")
-            return f"无法获取{city}的城市编码。假设天气为：晴天，温度15-25°C，适合户外活动。"
+            _tool_logger.log_fallback("天气信息", "无法获取城市编码")
+            return f"无法获取{city}在{date}的天气信息。无法获取城市编码，请检查城市名称是否正确。"
         
         # 计算目标日期与今天的天数差
         try:
@@ -77,114 +77,126 @@ def get_weather_info(city: str, date: str) -> str:
             today = datetime.now().date()
             target_date_only = target_date.date()
             days_diff = (target_date_only - today).days
-        except:
+            _tool_logger.log_info(f"日期计算: 目标日期={date}, 今天={today}, 天数差={days_diff}")
+        except Exception as e:
             days_diff = 0
+            _tool_logger.log_info(f"日期解析失败: {date}, 错误: {e}, 默认days_diff=0")
         
-        # 如果日期是今天或未来4天内，使用预报天气API（extensions=all返回4天预报）
-        if days_diff >= 0 and days_diff <= 4:
-            weather_url = "https://restapi.amap.com/v3/weather/weatherInfo"
-            weather_params = {
+        # 处理过去日期
+        if days_diff < 0:
+            _tool_logger.log_api_call("高德地图天气API", "跳过", f"不支持查询过去日期的天气")
+            return f"无法获取{city_name}在{date}的天气信息。高德地图API不支持查询过去日期的天气，{date}是过去日期。"
+        
+        # 使用预报天气API查询
+        # 注意：extensions="all" 返回预报+实况，但实况可能不在lives字段中
+        # 如果是今天，先尝试获取实况，如果没有再使用预报
+        weather_url = "https://restapi.amap.com/v3/weather/weatherInfo"
+        
+        # 如果是今天，先尝试获取实况天气（extensions="base"）
+        if days_diff == 0:
+            weather_params_base = {
                 "city": adcode,
                 "key": api_key,
-                "extensions": "all",  # all返回4天预报，base返回实况天气
+                "extensions": "base",  # base返回实况天气
                 "output": "json"
             }
-            
-            weather_response = _amap_limiter.get(weather_url, params=weather_params, timeout=5)
-            if weather_response.status_code == 200:
-                weather_data = weather_response.json()
-                if weather_data.get("status") == "1":
-                    # 如果是今天，优先使用实况天气
-                    if days_diff == 0:
-                        lives = weather_data.get("lives", [])
-                        if lives:
-                            live = lives[0]
-                            temp = live.get("temperature", "N/A")
-                            weather = live.get("weather", "未知")
-                            wind_direction = live.get("winddirection", "")
-                            wind_power = live.get("windpower", "")
-                            humidity = live.get("humidity", "N/A")
-                            report_time = live.get("reporttime", "")
-                            
-                            result = f"{city_name}在{date}的天气：{weather}，温度{temp}°C，湿度{humidity}%"
-                            if wind_direction:
-                                result += f"，风向{wind_direction}"
-                            if wind_power:
-                                result += f"，风力{wind_power}"
-                            
-                            _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}当天实况天气")
-                            return result
-                    
-                    # 如果是未来日期，使用预报天气
-                    forecasts = weather_data.get("forecasts", [])
-                    if forecasts:
-                        forecast = forecasts[0]
-                        casts = forecast.get("casts", [])
-                        
-                        # 查找目标日期的预报
-                        target_forecast = None
-                        for cast in casts:
-                            cast_date = cast.get("date", "")
-                            if cast_date == date:
-                                target_forecast = cast
-                                break
-                        
-                        if target_forecast:
-                            dayweather = target_forecast.get("dayweather", "未知")
-                            nightweather = target_forecast.get("nightweather", "未知")
-                            daytemp = target_forecast.get("daytemp", "N/A")
-                            nighttemp = target_forecast.get("nighttemp", "N/A")
-                            daywind = target_forecast.get("daywind", "")
-                            nightwind = target_forecast.get("nightwind", "")
-                            daypower = target_forecast.get("daypower", "")
-                            nightpower = target_forecast.get("nightpower", "")
-                            
-                            result = f"{city_name}在{date}的天气：白天{dayweather}，夜间{nightweather}，温度{nighttemp}-{daytemp}°C"
-                            if daywind:
-                                result += f"，白天风向{daywind}"
-                            if daypower:
-                                result += f"风力{daypower}"
-                            if nightwind:
-                                result += f"，夜间风向{nightwind}"
-                            if nightpower:
-                                result += f"风力{nightpower}"
-                            
-                            _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}在{date}的预报天气")
-                            return result
-        
-        # 如果日期超过4天，使用实况天气并给出估算
-        if days_diff > 4:
-            weather_url = "https://restapi.amap.com/v3/weather/weatherInfo"
-            weather_params = {
-                "city": adcode,
-                "key": api_key,
-                "extensions": "base",  # 实况天气
-                "output": "json"
-            }
-            
-            weather_response = _amap_limiter.get(weather_url, params=weather_params, timeout=5)
-            if weather_response.status_code == 200:
-                weather_data = weather_response.json()
-                if weather_data.get("status") == "1":
-                    lives = weather_data.get("lives", [])
-                    if lives:
+            weather_response_base = _amap_limiter.get(weather_url, params=weather_params_base, timeout=5)
+            if weather_response_base.status_code == 200:
+                weather_data_base = weather_response_base.json()
+                if weather_data_base.get("status") == "1":
+                    lives = weather_data_base.get("lives", [])
+                    if lives and len(lives) > 0:
                         live = lives[0]
                         temp = live.get("temperature", "N/A")
                         weather = live.get("weather", "未知")
+                        wind_direction = live.get("winddirection", "")
+                        wind_power = live.get("windpower", "")
+                        humidity = live.get("humidity", "N/A")
                         
-                        _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}当前实况天气用于估算")
-                        result = f"{city_name}在{date}的天气：{weather}，温度约{temp}°C（基于当前天气估算，{date}距离今天{days_diff}天，实际天气可能有所变化）"
-                        result += "。建议根据季节准备相应衣物，关注临近天气预报。"
+                        result = f"{city_name}在{date}的天气：{weather}，温度{temp}°C，湿度{humidity}%"
+                        if wind_direction:
+                            result += f"，风向{wind_direction}"
+                        if wind_power:
+                            result += f"，风力{wind_power}"
+                        
+                        _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}当天实况天气（base）")
                         return result
-                    else:
-                        _tool_logger.log_api_call("高德地图天气API", "失败", "无法获取实况天气")
-        _tool_logger.log_fallback("天气信息", "所有API调用失败，使用默认估算")
-        return f"天气API无法获取{city_name}在{date}的详细天气信息。建议：根据季节准备相应衣物，关注天气预报。"
+        
+        # 使用all获取预报天气（包含今天和未来几天）
+        weather_params = {
+            "city": adcode,
+            "key": api_key,
+            "extensions": "all",  # all返回4天预报
+            "output": "json"
+        }
+        
+        weather_response = _amap_limiter.get(weather_url, params=weather_params, timeout=5)
+        if weather_response.status_code != 200:
+            _tool_logger.log_api_call("高德地图天气API", "失败", f"HTTP {weather_response.status_code}")
+            return f"无法获取{city_name}在{date}的天气信息。天气API调用失败（HTTP {weather_response.status_code}），请稍后重试。"
+        
+        weather_data = weather_response.json()
+        api_status = weather_data.get("status", "")
+        
+        # 检查API返回状态
+        if api_status != "1":
+            infocode = weather_data.get("infocode", "")
+            info = weather_data.get("info", "")
+            error_msg = info or f"错误代码: {infocode}" if infocode else "未知错误"
+            _tool_logger.log_api_call("高德地图天气API", "失败", error_msg)
+            return f"无法获取{city_name}在{date}的天气信息。API返回错误: {error_msg}"
+        
+        # 处理今天或未来日期：使用预报天气
+        forecasts = weather_data.get("forecasts", [])
+        if not forecasts or len(forecasts) == 0:
+            _tool_logger.log_api_call("高德地图天气API", "失败", "预报数据为空")
+            if days_diff == 0:
+                return f"无法获取{city_name}在{date}的天气信息。实况天气和预报数据均不可用。"
+            else:
+                return f"无法获取{city_name}在{date}的天气信息。预报数据不可用。"
+        
+        forecast = forecasts[0]
+        casts = forecast.get("casts", [])
+        
+        if not casts or len(casts) == 0:
+            _tool_logger.log_api_call("高德地图天气API", "失败", "预报详情数据为空")
+            return f"无法获取{city_name}在{date}的天气信息。预报详情数据不可用。"
+        
+        # 查找目标日期的预报
+        for cast in casts:
+            cast_date = cast.get("date", "")
+            if cast_date == date:
+                # 找到目标日期的预报
+                dayweather = cast.get("dayweather", "未知")
+                nightweather = cast.get("nightweather", "未知")
+                daytemp = cast.get("daytemp", "N/A")
+                nighttemp = cast.get("nighttemp", "N/A")
+                daywind = cast.get("daywind", "")
+                nightwind = cast.get("nightwind", "")
+                daypower = cast.get("daypower", "")
+                nightpower = cast.get("nightpower", "")
+                
+                result = f"{city_name}在{date}的天气：白天{dayweather}，夜间{nightweather}，温度{nighttemp}-{daytemp}°C"
+                if daywind:
+                    result += f"，白天风向{daywind}"
+                if daypower:
+                    result += f"风力{daypower}"
+                if nightwind:
+                    result += f"，夜间风向{nightwind}"
+                if nightpower:
+                    result += f"风力{nightpower}"
+                
+                _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}在{date}的预报天气")
+                return result
+        
+        # 预报中未找到目标日期
+        _tool_logger.log_api_call("高德地图天气API", "失败", f"预报中未找到{date}的天气信息")
+        return f"无法获取{city_name}在{date}的天气信息。高德地图API的预报数据中未包含该日期（{date}距离今天{days_diff}天，预报通常覆盖未来3-4天）。建议关注临近天气预报。"
         
     except Exception as e:
         _tool_logger.log_api_call("高德地图天气API", "异常", str(e)[:100])
         _tool_logger.log_fallback("天气信息", f"异常错误: {str(e)[:100]}")
-        return f"获取天气信息时出错: {str(e)}。假设{city}在{date}的天气为：晴天，温度15-25°C，适合户外活动。"
+        return f"获取天气信息时出错: {str(e)}。无法获取{city}在{date}的天气信息，请稍后重试。"
 
 
 @tool
@@ -307,11 +319,17 @@ def plan_travel_itinerary(
     departure_city: Optional[str] = None,
     transport_mode: Optional[str] = None,
     interests: Optional[str] = None,
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
+    # 以下参数用于接收已查询的信息，避免重复查询
+    existing_weather_info: Optional[str] = None,
+    existing_transport_info: Optional[str] = None,
+    existing_hotel_info: Optional[str] = None,
+    existing_attraction_info: Optional[str] = None
 ) -> str:
     """
     规划旅行行程。会自动查询交通路线、天气、酒店价格和景点门票信息，提供更准确的规划。
     注意：此工具会优先查询交通路线以获取准确的距离和时间信息，这是规划行程的基础。
+    如果已经提供了查询到的信息（existing_*参数），将直接使用，避免重复查询。
     目的地和出发地都是可选的，如果没有提供，将进行通用旅行规划。
     
     Args:
@@ -326,6 +344,10 @@ def plan_travel_itinerary(
         transport_mode: 出行方式，仅支持"自驾"（可选，用于查询自驾路线）
         interests: 兴趣偏好，例如"历史、文化、美食"（可选，用于查询景点门票）
         session_id: 会话ID（可选，用于区分不同用户）
+        existing_weather_info: 已查询的天气信息（可选，避免重复查询）
+        existing_transport_info: 已查询的交通信息（可选，避免重复查询）
+        existing_hotel_info: 已查询的酒店信息（可选，避免重复查询）
+        existing_attraction_info: 已查询的景点信息（可选，避免重复查询）
     
     Returns:
         详细的行程规划提示，包含交通路线（距离、时间、费用）、天气、酒店价格和景点门票信息
@@ -339,8 +361,11 @@ def plan_travel_itinerary(
 当前偏好：{preferences if preferences else '无特殊偏好'}
 """
     
-    # **优先查询自驾路线**：这是规划行程的基础，必须获取准确的距离和时间
-    if departure_city and destination:
+    # **优先使用已查询的交通信息，如果没有则查询**
+    if existing_transport_info:
+        plan_prompt += f"\n【重要】自驾路线信息（距离、时间、费用）：\n{existing_transport_info}\n"
+        plan_prompt += "\n注意：请基于上述实际距离和时间来安排行程，而不是估算。\n"
+    elif departure_city and destination:
         # 默认使用自驾方式
         transport_mode_to_use = transport_mode if transport_mode == "自驾" else "自驾"
         try:
@@ -356,8 +381,10 @@ def plan_travel_itinerary(
     elif departure_city or destination:
         plan_prompt += "\n提示：缺少出发地或目的地，无法查询准确的自驾路线和距离。建议询问用户完整信息或提供通用建议。\n"
     
-    # 如果有目的地和日期信息，查询天气
-    if destination and departure_date:
+    # **优先使用已查询的天气信息，如果没有则查询**
+    if existing_weather_info:
+        plan_prompt += f"\n出发日天气：{existing_weather_info}\n"
+    elif destination and departure_date:
         try:
             weather_info = get_weather_info.invoke({"city": destination, "date": departure_date})
             plan_prompt += f"\n出发日天气：{weather_info}\n"
@@ -366,8 +393,10 @@ def plan_travel_itinerary(
     elif departure_date and not destination:
         plan_prompt += "\n提示：已提供出发日期，但缺少目的地，无法查询具体天气。建议根据出发日期和季节提供一般性天气建议。\n"
     
-    # 如果有目的地、酒店偏好和日期，查询酒店价格
-    if destination and hotel_preference and departure_date and return_date:
+    # **优先使用已查询的酒店信息，如果没有则查询**
+    if existing_hotel_info:
+        plan_prompt += f"\n酒店价格信息：\n{existing_hotel_info}\n"
+    elif destination and hotel_preference and departure_date and return_date:
         try:
             hotel_info = get_hotel_prices.invoke({
                 "city": destination,
@@ -381,8 +410,10 @@ def plan_travel_itinerary(
     elif hotel_preference and departure_date and return_date and not destination:
         plan_prompt += "\n提示：已提供酒店偏好和日期，但缺少目的地，无法查询具体酒店价格。建议根据酒店偏好提供一般性价格参考。\n"
     
-    # 如果有目的地和兴趣偏好，查询景点门票
-    if destination and interests:
+    # **优先使用已查询的景点信息，如果没有则查询**
+    if existing_attraction_info:
+        plan_prompt += f"\n景点门票信息：\n{existing_attraction_info}\n"
+    elif destination and interests:
         try:
             attraction_info = get_attraction_ticket_prices.invoke({
                 "city": destination,
@@ -815,8 +846,25 @@ def get_attraction_ticket_prices(
         
         if amap_key and city:
             try:
-                # 高德地图POI搜索API - 优化关键字搜索策略
-                poi_url = "https://restapi.amap.com/v3/place/text"
+                # 首先通过地理编码API获取城市编码（adcode），v5 API建议使用adcode
+                geo_url = "https://restapi.amap.com/v3/geocode/geo"
+                geo_params = {
+                    "address": city,
+                    "key": amap_key,
+                    "output": "json"
+                }
+                
+                geo_response = _amap_limiter.get(geo_url, params=geo_params, timeout=5)
+                adcode = None
+                city_name = city
+                if geo_response.status_code == 200:
+                    geo_data = geo_response.json()
+                    if geo_data.get("status") == "1" and geo_data.get("geocodes"):
+                        adcode = geo_data["geocodes"][0].get("adcode", "")
+                        city_name = geo_data["geocodes"][0].get("formatted_address", city)
+                
+                # 高德地图v5 POI搜索API - 优化关键字搜索策略
+                poi_url = "https://restapi.amap.com/v5/place/text"
                 
                 # 构建搜索关键词：如果指定了景点名称，使用精确搜索；否则结合兴趣偏好
                 if attraction_name:
@@ -841,22 +889,36 @@ def get_attraction_ticket_prices(
                 poi_params = {
                     "key": amap_key,
                     "keywords": search_keywords,
-                    "city": city,
-                    "citylimit": "true",  # 限制在指定城市内搜索，提高精度
+                }
+                
+                # v5 API使用region参数，优先使用adcode，否则使用城市名
+                if adcode:
+                    poi_params["region"] = adcode
+                else:
+                    poi_params["region"] = city
+                
+                poi_params.update({
                     "types": "110000",  # 风景名胜
                     "offset": 10,
                     "page": 1,
                     "extensions": "all"  # 返回详细信息
-                }
+                })
                 
                 poi_response = _amap_limiter.get(poi_url, params=poi_params, timeout=5)
                 if poi_response.status_code == 200:
                     poi_data = poi_response.json()
-                    if poi_data.get("status") == "1" and poi_data.get("pois"):
+                    # v5 API成功状态码是 "10000" 或可能有其他格式，兼容处理
+                    is_success = (
+                        poi_data.get("code") == "10000" or 
+                        poi_data.get("status") == "1" or
+                        poi_data.get("status") == "OK"
+                    )
+                    
+                    if is_success and poi_data.get("pois"):
                         pois = poi_data["pois"][:10]  # 取前10个
-                        _tool_logger.log_api_call("高德地图POI API", "成功", f"关键字'{search_keywords}'，获取{city}景点信息，共{len(pois)}个")
+                        _tool_logger.log_api_call("高德地图POI API (v5)", "成功", f"关键字'{search_keywords}'，获取{city}景点信息，共{len(pois)}个")
                         
-                        result = f"{city}的景点信息"
+                        result = f"{city_name}的景点信息"
                         if attraction_name:
                             result += f"（搜索：{attraction_name}）"
                         result += "：\n\n"
@@ -866,17 +928,45 @@ def get_attraction_ticket_prices(
                             address = poi.get("address", "")
                             tel = poi.get("tel", "")
                             business_area = poi.get("business_area", "")  # 商圈/区域
+                            # v5可能返回的额外字段
+                            adname = poi.get("adname", "")  # 行政区名称
+                            
+                            # 提取cost字段（人均消费/门票价格），可能是字符串或数字
+                            cost = poi.get("cost", "")
+                            if not cost:
+                                cost = poi.get("cost_str", "")  # 尝试其他可能的字段名
+                            if cost and isinstance(cost, (int, float)):
+                                cost = str(int(cost)) if isinstance(cost, float) and cost.is_integer() else str(cost)
+                            
+                            # 提取rating字段（评分）
+                            rating = poi.get("rating", "")
+                            if not rating:
+                                rating = poi.get("rating_str", "")  # 尝试其他可能的字段名
+                            if rating and isinstance(rating, (int, float)):
+                                rating = str(rating)
                             
                             result += f"{i}. {name}\n"
                             if address:
                                 result += f"   地址：{address}\n"
-                            if business_area:
+                            if adname and adname not in address:
+                                result += f"   区域：{adname}\n"
+                            elif business_area:
                                 result += f"   区域：{business_area}\n"
+                            if rating and rating.strip():
+                                result += f"   评分：{rating}\n"
+                            if cost and cost.strip():
+                                # cost字段可能是人均消费或门票价格
+                                # 如果已经是数字格式，直接显示；否则尝试转换为数字
+                                try:
+                                    cost_num = float(cost) if isinstance(cost, str) else cost
+                                    result += f"   人均消费：{int(cost_num) if cost_num == int(cost_num) else cost_num}元\n"
+                                except (ValueError, TypeError):
+                                    result += f"   人均消费：{cost}元\n"
                             if tel:
                                 result += f"   电话：{tel}\n"
                             result += "\n"
                         
-                        result += "提示：门票价格信息请通过官方渠道或携程、去哪儿等平台查询实时价格。"
+                        result += "提示：以上价格仅供参考，实际门票价格可能因季节、优惠活动等因素有所不同。建议通过官方渠道或携程、去哪儿等平台查询实时价格。"
                         return result
             except Exception as e:
                 # API调用失败，使用估算
