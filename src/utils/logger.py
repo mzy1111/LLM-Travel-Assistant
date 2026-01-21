@@ -91,4 +91,15 @@ class AgentLogger:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"  🔄 [{timestamp}] 使用兜底方案: {service_name}", flush=True)
         print(f"     原因: {reason}", flush=True)
+    
+    def log_weather_result(self, city: str, date: str, result: str):
+        """记录天气查询结果到终端日志"""
+        if not self.verbose:
+            return
+        
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"  📋 [{timestamp}] 天气查询结果:", flush=True)
+        print(f"     城市: {city}", flush=True)
+        print(f"     日期: {date}", flush=True)
+        print(f"     结果: {result}", flush=True)
 

@@ -1,28 +1,17 @@
-"""测试配置加载"""
+"""测试配置 - 统一管理测试环境的警告和日志设置"""
+import warnings
+import os
 import sys
-from pathlib import Path
 
-# 添加项目根目录到Python路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# 抑制Pydantic弃用警告
+warnings.filterwarnings('ignore', category=DeprecationWarning, module='pydantic')
+warnings.filterwarnings('ignore', message='.*dict.*method is deprecated.*')
+warnings.filterwarnings('ignore', message='.*model_dump.*')
 
-from src.config import config
-
-print("=" * 60)
-print("配置测试")
-print("=" * 60)
-print(f"API Key: {'已设置' if config.openai_api_key else '未设置'}")
-if config.openai_api_key:
-    print(f"API Key (前10位): {config.openai_api_key[:10]}...")
-print(f"API Base: {config.openai_api_base}")
-print(f"LLM Model: {config.llm_model}")
-print(f"Embedding Model: {config.embedding_model}")
-print("=" * 60)
-
-if not config.openai_api_key:
-    print("\n错误：未找到 OPENAI_API_KEY")
-    print("请检查 env 或 .env 文件是否存在并包含正确的配置")
-    sys.exit(1)
-else:
-    print("\n配置加载成功！")
-
+# 设置Windows控制台编码为UTF-8（避免日志中出现UnicodeEncodeError）
+if sys.platform == 'win32':
+    import io
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')

@@ -26,23 +26,43 @@ LLM-Travel-Assistant/
 ├── data/                        # 数据目录
 │   └── users.json               # 用户数据（Git忽略）
 │
+├── demos/                       # 演示文件
+│   ├── README.md               # 演示说明
+│   ├── 初次查询.gif            # 演示1：初次查询演示
+│   └── 修改形成.gif            # 演示2：修改行程演示
+│
 ├── tests/                       # 测试文件
+│   ├── fixtures/               # 测试工具和fixtures
+│   │   ├── __init__.py        # 模块初始化
+│   │   └── test_callback_handler.py  # 测试用CallbackHandler（追踪Agent调用）
 │   ├── __init__.py             # 模块初始化
 │   ├── test_agent_tools.py     # 工具函数测试（使用mock）
 │   ├── test_agent_api_connection.py  # API连接和功能测试（真实API）
 │   ├── test_specialized_agents.py    # 专门Agent初始化测试
+│   ├── test_agent_routing.py   # Agent路由测试
+│   ├── test_function_calling.py # Function Calling测试
+│   ├── test_agent_memory.py    # Agent记忆机制测试
+│   ├── test_agent_performance.py # Agent性能测试
+│   ├── test_agent_integration.py # Agent集成测试
+│   ├── test_agent_all.py       # 运行所有Agent测试
 │   ├── test_config.py          # 配置测试
 │   ├── test_import.py          # 导入测试
 │   ├── run_all_tests.py        # 测试运行脚本
-│   └── README.md               # 测试文档
+│   ├── README.md               # 测试文档
+│   └── README_AGENT_TESTS.md   # Agent测试详细说明
 │
 ├── scripts/                     # 工具脚本
 │   ├── __init__.py             # 模块初始化
 │   ├── example.py              # 使用示例
 │   ├── test_api_connection.py  # API连接测试
-│   ├── test_weather_api.py    # 天气API测试
+│   ├── test_weather_api.py     # 天气API测试
 │   ├── test_geocoding.py      # 地理编码测试
-│   └── test_driving_route.py  # 自驾路线测试
+│   ├── test_driving_route.py  # 自驾路线测试
+│   ├── test_hotel_prices.py   # 酒店价格测试
+│   ├── test_attraction_tickets.py # 景点门票测试
+│   ├── test_attraction_question.py # 景点问答测试
+│   ├── test_travel_itinerary.py # 行程规划测试
+│   └── test_personalized_recommendations.py # 个性化推荐测试
 │
 ├── docs/                        # 文档目录
 │   ├── PROJECT_OVERVIEW.md     # 项目概述
@@ -103,9 +123,17 @@ Web界面模板文件，使用Flask渲染。
 
 - `users.json`: 用户数据文件（Git忽略，不提交到仓库）
 
+### demos/
+演示文件目录，包含项目演示GIF。
+
+- `README.md`: 演示说明文档
+- `初次查询.gif`: 演示1：初次查询演示
+- `修改形成.gif`: 演示2：修改行程演示
+
 ### tests/
 测试文件目录，用于单元测试和集成测试。
 
+#### 基础测试
 - `test_agent_tools.py`: 工具函数测试（使用mock，验证工具基本功能）
 - `test_agent_api_connection.py`: 真实API连接和功能测试（验证API实际返回数据）
 - `test_specialized_agents.py`: 专门Agent初始化测试
@@ -114,14 +142,29 @@ Web界面模板文件，使用Flask渲染。
 - `run_all_tests.py`: 一键运行所有测试
 - `README.md`: 测试文档说明
 
+#### Agent深度测试（面试亮点）
+- `fixtures/test_callback_handler.py`: 测试用CallbackHandler，用于追踪Agent调用
+- `test_agent_routing.py`: Agent路由测试，验证主Agent正确路由到专门Agent
+- `test_function_calling.py`: Function Calling测试，验证工具选择准确性
+- `test_agent_memory.py`: Agent记忆机制测试，验证多轮对话上下文保持
+- `test_agent_performance.py`: Agent性能测试，统计API调用次数、响应时间
+- `test_agent_integration.py`: Agent集成测试，完整流程端到端测试
+- `test_agent_all.py`: 运行所有Agent测试的主文件
+- `README_AGENT_TESTS.md`: Agent测试详细说明文档
+
 ### scripts/
-工具脚本目录，包含辅助脚本和示例代码。
+工具脚本目录，包含辅助脚本和测试脚本。
 
 - `example.py`: 使用示例
 - `test_api_connection.py`: API连接测试
-- `test_weather_api.py`: 天气API测试
+- `test_weather_api.py`: 天气API测试（硬编码测试用例）
 - `test_geocoding.py`: 地理编码测试
 - `test_driving_route.py`: 自驾路线测试
+- `test_hotel_prices.py`: 酒店价格测试（硬编码测试用例）
+- `test_attraction_tickets.py`: 景点门票测试（硬编码测试用例）
+- `test_attraction_question.py`: 景点问答测试（硬编码测试用例）
+- `test_travel_itinerary.py`: 行程规划测试（硬编码测试用例）
+- `test_personalized_recommendations.py`: 个性化推荐测试（硬编码测试用例）
 
 ### docs/
 文档目录，包含项目文档和使用指南。
@@ -155,19 +198,37 @@ python src/main.py
 # 运行所有测试
 python tests/run_all_tests.py
 
+# 运行所有Agent测试（面试亮点）
+python tests/test_agent_all.py
+
 # 运行特定测试
 python -m unittest tests.test_agent_tools
 python -m unittest tests.test_agent_api_connection
 python -m unittest tests.test_specialized_agents
+
+# 运行Agent深度测试
+python -m pytest tests/test_agent_routing.py -v
+python -m pytest tests/test_function_calling.py -v
+python -m pytest tests/test_agent_memory.py -v
+python -m pytest tests/test_agent_performance.py -v
+python -m pytest tests/test_agent_integration.py -v
 ```
 
 ### 工具脚本
 ```bash
+# 基础测试脚本
 python scripts/example.py
 python scripts/test_api_connection.py
 python scripts/test_weather_api.py
 python scripts/test_geocoding.py
 python scripts/test_driving_route.py
+
+# 工具函数测试脚本（硬编码测试用例，便于调试）
+python scripts/test_hotel_prices.py
+python scripts/test_attraction_tickets.py
+python scripts/test_attraction_question.py
+python scripts/test_travel_itinerary.py
+python scripts/test_personalized_recommendations.py
 ```
 
 ## 架构说明

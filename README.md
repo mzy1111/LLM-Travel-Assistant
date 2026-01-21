@@ -1,6 +1,6 @@
 # LLM-Travel-Assistant
 
-基于大语言模型（LLM）的智能旅行助手，支持自然语言行程规划、景点问答、个性化推荐，集成第三方API提供实时天气、交通、酒店和景点信息。
+基于大语言模型（LLM）的智能旅行助手，采用多Agent架构设计，支持自然语言行程规划、景点问答、个性化推荐等功能。集成高德地图API提供实时天气、交通路线、酒店价格和景点信息。项目包含完整的Agent测试框架，确保系统稳定性和可靠性。
 
 ## 🎬 项目演示
 
@@ -29,7 +29,8 @@
 ### 🌤️ 实时天气查询
 - 使用高德地图API获取天气信息
 - 支持4天天气预报和当天实况天气
-- 超过4天的日期使用当前天气并给出估算提示
+- 超过4天的日期返回提示信息（不支持查询）
+- 天气查询结果自动记录到终端日志，方便验证准确性
 - 自动限流控制（每秒最多3次请求，最多3个并发）
 
 ### 🏨 酒店价格估算
@@ -40,6 +41,9 @@
 ### 🚗 交通路线规划
 - **自驾**：使用高德地图API精准计算距离、时间、过路费、油费
 - **公共交通**：提供飞机、高铁、火车、大巴的票价和时间估算
+- **智能回答**：根据用户问题的具体程度提供相应详细程度的回答
+  - 简单问题（如"需要多久？"）→ 简洁回答
+  - 详细规划需求 → 完整信息（距离、时间、费用、建议等）
 - 自动限流控制，避免API调用超限
 
 ### 🎫 景点门票查询
@@ -76,10 +80,14 @@
 - 流式响应，实时显示工具执行进度
 
 ### 🧪 测试套件
-- 完整的单元测试
-- 工具函数测试（使用mock）
-- API连接测试（真实API）
-- Agent初始化测试
+- **工具函数测试**：在`scripts/`目录下，测试各个工具函数（天气、酒店、景点、交通等）
+- **Agent测试**：在`tests/`目录下，完整的Agent测试框架
+  - Agent路由测试：验证主Agent正确路由到专门Agent
+  - 函数调用测试：验证LLM准确选择工具和提取参数
+  - 内存测试：验证Agent的对话记忆和上下文管理
+  - 性能测试：测试API调用次数和响应时间
+  - 集成测试：端到端完整流程测试
+- **测试工具**：自定义回调处理器，非侵入式监控Agent行为
 
 ## 📁 项目结构
 
@@ -111,16 +119,30 @@ LLM-Travel-Assistant/
 │   └── 修改形成.gif            # 演示2：修改行程演示
 │
 ├── tests/                       # 测试文件
+│   ├── fixtures/               # 测试工具和fixtures
+│   │   └── test_callback_handler.py  # 测试用CallbackHandler
 │   ├── test_agent_tools.py     # 工具函数测试（使用mock）
 │   ├── test_agent_api_connection.py  # API连接和功能测试（真实API）
 │   ├── test_specialized_agents.py    # 专门Agent初始化测试
+│   ├── test_agent_routing.py   # Agent路由测试
+│   ├── test_function_calling.py # Function Calling测试
+│   ├── test_agent_memory.py    # Agent记忆机制测试
+│   ├── test_agent_performance.py # Agent性能测试
+│   ├── test_agent_integration.py # Agent集成测试
+│   ├── test_agent_all.py       # 运行所有Agent测试
 │   ├── run_all_tests.py        # 测试运行脚本
-│   └── README.md               # 测试文档
+│   ├── README.md               # 测试文档
+│   └── README_AGENT_TESTS.md   # Agent测试详细说明
 │
 ├── scripts/                     # 工具脚本
 │   ├── test_weather_api.py     # 天气API测试
 │   ├── test_geocoding.py       # 地理编码测试
 │   ├── test_driving_route.py   # 自驾路线测试
+│   ├── test_hotel_prices.py    # 酒店价格测试
+│   ├── test_attraction_tickets.py # 景点门票测试
+│   ├── test_attraction_question.py # 景点问答测试
+│   ├── test_travel_itinerary.py # 行程规划测试
+│   ├── test_personalized_recommendations.py # 个性化推荐测试
 │   └── test_api_connection.py  # API连接测试
 │
 ├── docs/                        # 文档目录
@@ -280,32 +302,64 @@ python src/main.py
 
 ## 🧪 测试
 
-### 运行所有测试
+### 运行工具测试
+
+在 `scripts/` 目录下运行各个工具的测试脚本：
 
 ```bash
-python tests/run_all_tests.py
+# 测试天气API
+python scripts/test_weather_api.py
+
+# 测试酒店价格
+python scripts/test_hotel_prices.py
+
+# 测试景点门票
+python scripts/test_attraction_tickets.py
+
+# 测试行程规划
+python scripts/test_travel_itinerary.py
 ```
 
-### 运行特定测试
+### 运行Agent测试
+
+在 `tests/` 目录下运行Agent测试：
 
 ```bash
-# 工具函数测试（使用mock，不依赖API）
-python -m unittest tests.test_agent_tools
+# 运行所有Agent测试
+python -m unittest tests.test_agent_all
 
-# API连接和功能测试（需要配置API密钥，测试真实API）
-python -m unittest tests.test_agent_api_connection
+# 运行单个测试文件
+python -m unittest tests.test_agent_routing
 
-# 专门Agent初始化测试
-python -m unittest tests.test_specialized_agents
+# 运行单个测试方法
+python -m unittest tests.test_agent_routing.TestAgentRouting.test_weather_routing
 ```
 
 ### 测试说明
 
-- **test_agent_tools.py**：测试工具函数的基本功能，使用mock模拟API响应
-- **test_agent_api_connection.py**：测试真实API连接和功能，验证API返回的实际数据
-- **test_specialized_agents.py**：测试各个专门Agent的初始化和创建
+- **工具函数测试**（`scripts/`目录）：
+  - 测试各个工具函数的基本功能
+  - 使用硬编码测试用例，便于调试
+  - 需要配置API密钥（高德地图API）
 
-详细测试文档请参考 [tests/README.md](tests/README.md)
+- **Agent测试**（`tests/`目录）：
+  - **test_agent_routing.py**：验证主Agent正确路由到专门Agent
+  - **test_function_calling.py**：验证LLM准确选择工具和提取参数
+  - **test_agent_memory.py**：验证Agent的对话记忆和上下文管理
+  - **test_agent_performance.py**：测试API调用次数和响应时间
+  - **test_agent_integration.py**：端到端完整流程测试
+  - **test_agent_tools.py**：工具函数测试（使用mock）
+  - **test_agent_api_connection.py**：真实API连接测试
+
+### 测试工具
+
+- **TestCallbackHandler**：自定义回调处理器，非侵入式监控Agent行为
+  - 跟踪工具调用、Agent调用、LLM调用
+  - 提供调用序列和统计信息
+
+详细测试文档请参考：
+- [tests/README_AGENT_TESTS.md](tests/README_AGENT_TESTS.md) - Agent测试详细说明
+- [tests/HOW_TO_RUN_SINGLE_TEST.md](tests/HOW_TO_RUN_SINGLE_TEST.md) - 如何运行单个测试方法
 
 ## 🛠️ 技术栈
 
@@ -389,6 +443,31 @@ MIT License
 5. **限流控制**：高德地图API自动限流，每秒最多3次请求，最多3个并发
 
 ## 📅 变更日志
+
+### 2026-01-21 - Agent优化与测试完善
+
+#### 🎯 Agent回答优化
+- ✅ **TransportAgent简洁回答**：根据用户问题的具体程度提供相应详细程度的回答
+  - 简单问题（如"需要多久？"）→ 只回答时间
+  - 简单问题（如"距离是多少？"）→ 只回答距离
+  - 详细规划需求 → 提供完整信息
+- ✅ **主Agent优化**：主协调Agent直接返回专门Agent的回答，不添加额外信息
+- ✅ **天气查询日志**：天气查询结果自动记录到终端日志，方便验证准确性
+
+#### 🧪 测试框架完善
+- ✅ **Agent测试套件**：新增完整的Agent测试框架
+  - Agent路由测试：验证主Agent正确路由到专门Agent
+  - 函数调用测试：验证LLM准确选择工具和提取参数
+  - 内存测试：验证Agent的对话记忆和上下文管理
+  - 性能测试：测试API调用次数和响应时间
+  - 集成测试：端到端完整流程测试
+- ✅ **测试工具**：自定义回调处理器（TestCallbackHandler），非侵入式监控Agent行为
+- ✅ **测试输出优化**：抑制Pydantic弃用警告，清理测试日志输出
+- ✅ **测试用例优化**：测试通过时打印Agent的具体回答，方便验证准确性
+
+#### 📊 日志系统优化
+- ✅ **天气查询日志**：天气查询成功时自动记录到终端日志
+- ✅ **日志格式优化**：统一的日志格式，清晰的标识和分类
 
 ### 2026-01-21 - API升级与性能优化
 

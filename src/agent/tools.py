@@ -27,7 +27,12 @@ def get_weather_info(city: str, date: str) -> str:
     
     Args:
         city: 城市名称，例如"北京"、"上海"、"广州"
-        date: 日期，格式为"YYYY-MM-DD"，例如"2024-01-15"
+        date: 日期，格式为"YYYY-MM-DD"，例如"2026-01-24"。必须是具体日期，不能是相对日期（如"明天"、"3天后"）。
+              如果用户使用相对日期，需要先计算具体日期：
+              - "今天" = 当前日期
+              - "明天" = 当前日期 + 1天
+              - "3天后" = 当前日期 + 3天
+              注意：当前年份是2026年，计算时确保年份正确。
     
     Returns:
         天气信息字符串，包括温度、天气状况、降雨概率等。如果API不可用，返回提示信息。
@@ -120,6 +125,8 @@ def get_weather_info(city: str, date: str) -> str:
                             result += f"，风力{wind_power}"
                         
                         _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}当天实况天气（base）")
+                        # 记录天气查询结果到终端日志
+                        _tool_logger.log_weather_result(city, date, result)
                         return result
         
         # 使用all获取预报天气（包含今天和未来几天）
@@ -187,6 +194,8 @@ def get_weather_info(city: str, date: str) -> str:
                     result += f"风力{nightpower}"
                 
                 _tool_logger.log_api_call("高德地图天气API", "成功", f"获取{city}在{date}的预报天气")
+                # 记录天气查询结果到终端日志
+                _tool_logger.log_weather_result(city, date, result)
                 return result
         
         # 预报中未找到目标日期
