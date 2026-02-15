@@ -159,19 +159,15 @@ def chat():
             print(f'Agent初始化失败: {error}')
             return jsonify({'error': f'Agent初始化失败: {error}'}), 500
         
-        # 如果有旅行信息，传递给Agent
-        if travel_info:
-            print(f'传递旅行信息给Agent: {travel_info}')
-            agent.set_travel_info(travel_info)
-        elif 'travel_info' in session:
-            # 如果session中已有旅行信息，也传递给Agent
-            saved_travel_info = session['travel_info']
-            print(f'从session获取旅行信息: {saved_travel_info}')
-            agent.set_travel_info(saved_travel_info)
+        # ========== 修复2: 设置为聊天模式，不注入旅行信息 ==========
+        agent.set_planning_mode(False)
+        print('✅ 已设置为聊天模式（不注入旅行信息）')
         
-        # 添加调试日志，检查Agent是否正确设置了旅行信息
-        agent_travel_info = agent.get_travel_info()
-        print(f'Agent中存储的旅行信息: {agent_travel_info}')
+        # 不再自动设置旅行信息，避免污染对话
+        # if travel_info:
+        #     agent.set_travel_info(travel_info)
+        # elif 'travel_info' in session:
+        #     agent.set_travel_info(session['travel_info'])
         
         # 获取回复
         response = agent.chat(user_input)
@@ -209,11 +205,15 @@ def chat_stream():
         if error:
             return jsonify({'error': f'Agent初始化失败: {error}'}), 500
         
-        # 设置旅行信息
-        if travel_info:
-            agent.set_travel_info(travel_info)
-        elif 'travel_info' in session:
-            agent.set_travel_info(session['travel_info'])
+        # ========== 修复2: 设置为聊天模式，不注入旅行信息 ==========
+        agent.set_planning_mode(False)
+        print('✅ 已设置为聊天模式（不注入旅行信息）')
+        
+        # 不再自动设置旅行信息
+        # if travel_info:
+        #     agent.set_travel_info(travel_info)
+        # elif 'travel_info' in session:
+        #     agent.set_travel_info(session['travel_info'])
         
         # 创建队列用于在线程间传递工具执行结果
         result_queue = queue.Queue()
@@ -344,6 +344,14 @@ def chat_stream():
         )
         
     except Exception as e:
+        import traceback
+        print('\n' + '='*80, flush=True)
+        print('❌ 流式规划请求处理失败', flush=True)
+        print('='*80, flush=True)
+        print(f'错误类型: {type(e).__name__}', flush=True)
+        print(f'错误信息: {str(e)}', flush=True)
+        traceback.print_exc()
+        print('='*80 + '\n', flush=True)
         return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
 
 
@@ -351,16 +359,65 @@ def chat_stream():
 def generate_plan_stream():
     """流式生成旅行规划（使用Server-Sent Events）"""
     try:
+        print('\n' + '='*80, flush=True)
+        print('📍 [1/10] 开始处理流式规划请求', flush=True)
+        print('='*80, flush=True)
+        
         # 检查登录状态
         if 'user_id' not in session:
+            print('❌ 用户未登录', flush=True)
             return jsonify({'error': '请先登录'}), 401
+        
+        print('✅ [2/10] 用户已登录', flush=True)
         
         data = request.json
         travel_info = data.get('travelInfo', {})
+        print(f'✅ [3/10] 接收到旅行信息: {list(travel_info.keys())}', flush=True)
         
         # 验证必填字段
         if not travel_info.get('departureDate') or not travel_info.get('returnDate'):
+            print('❌ 缺少必填字段：出发日期或返回日期', flush=True)
             return jsonify({'error': '出发日期和返回日期不能为空'}), 400
+        
+        print('✅ [4/10] 必填字段验证通过', flush=True)
+        
+        # ========== 优化3: 预算预检查 ==========
+        print('📍 [5/10] 开始预算预检查...', flush=True)
+        from src.utils.budget_checker import check_budget
+        
+        if travel_info.get('budget'):
+            is_feasible, message, breakdown = check_budget(travel_info)
+            print(f'✅ [5/10] 预算检查完成: 可行性={is_feasible}', flush=True)
+            
+            if not is_feasible:
+                print(f'❌ 预算不足: {message}', flush=True)
+                # 预算不足，直接返回错误（使用SSE格式）
+                def generate_error():
+                    yield f"data: {json.dumps({'type': 'error', 'message': message}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                
+                return Response(
+                    stream_with_context(generate_error()),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
+            
+            elif message.startswith('💡'):
+                # 预算紧张，发送警告但继续
+                budget_warning = message
+                print(f'⚠️  预算紧张: {message[:50]}...', flush=True)
+            else:
+                budget_warning = None
+                print('✅ 预算充足', flush=True)
+        else:
+            budget_warning = None
+            print('ℹ️  未设置预算，跳过预算检查', flush=True)
+        # ========== 预算检查结束 ==========
+        
+        print('✅ [6/10] 开始获取或创建Agent...', flush=True)
         
         # 保存旅行信息到session
         session['travel_info'] = travel_info
@@ -372,21 +429,32 @@ def generate_plan_stream():
             session_id = str(uuid.uuid4())
             session['session_id'] = session_id
         
+        print(f'ℹ️  用户ID: {user_id[:8] if user_id else "N/A"}...', flush=True)
+        print(f'ℹ️  会话ID: {session_id[:8] if session_id else "N/A"}...', flush=True)
+        
         # 获取或创建Agent
         agent, error = get_or_create_agent(user_id=user_id, session_id=session_id)
         if error:
+            print(f'❌ [6/10] Agent初始化失败: {error}', flush=True)
             return jsonify({'error': f'Agent初始化失败: {error}'}), 500
         
-        # 设置旅行信息
+        print('✅ [6/10] Agent获取成功', flush=True)
+        
+        # ========== 修复2: 设置为规划模式，注入旅行信息 ==========
+        agent.set_planning_mode(True)
         agent.set_travel_info(travel_info)
+        print('✅ [7/10] 已设置为规划模式，旅行信息已设置到Agent', flush=True)
         
         # 构建规划请求（与generate_plan相同）
+        print('📍 [8/10] 开始构建规划请求...', flush=True)
         from datetime import datetime
         try:
             departure = datetime.strptime(travel_info['departureDate'], '%Y-%m-%d')
             return_date = datetime.strptime(travel_info['returnDate'], '%Y-%m-%d')
             days = (return_date - departure).days + 1
-        except:
+            print(f'✅ 计算旅行天数: {days}天', flush=True)
+        except Exception as e:
+            print(f'⚠️  日期解析失败: {e}，使用默认7天', flush=True)
             days = 7
         
         destination = travel_info.get('destination', '')
@@ -432,7 +500,11 @@ def generate_plan_stream():
         
         user_request += f"{'5' if (destination and travel_info.get('interests')) or (departure_city and destination and travel_info.get('transportMode')) or travel_info.get('hotelPreference') else '2'}. 然后使用 plan_travel_itinerary 工具生成详细行程，该工具会自动集成所有查询到的信息\n"
         
+        print(f'✅ [8/10] 规划请求构建完成，长度: {len(user_request)}字符', flush=True)
+        print(f'ℹ️  请求摘要: {user_request[:100]}...', flush=True)
+        
         # 创建队列用于在线程间传递工具执行结果
+        print('📍 [9/10] 创建回调处理器和执行队列...', flush=True)
         result_queue = queue.Queue()
         
         # 创建回调处理器
@@ -482,10 +554,12 @@ def generate_plan_stream():
                     self.current_tool = None
         
         callback_handler = ToolCallbackHandler(result_queue)
+        print('✅ [9/10] 回调处理器创建完成', flush=True)
         
         # 在线程中执行Agent
         def run_agent():
             try:
+                print('📍 [10/10] Agent线程开始执行...', flush=True)
                 import hashlib
                 travel_info_str = str(sorted(agent.travel_info.items()))
                 current_travel_info_hash = hashlib.md5(travel_info_str.encode()).hexdigest()
@@ -495,9 +569,12 @@ def generate_plan_stream():
                     combined_input = f"{travel_context}\n\n用户问题: {user_request}"
                     agent.travel_info_added_to_conversation = True
                     agent.last_travel_info_hash = current_travel_info_hash
+                    print('ℹ️  已添加旅行信息到对话上下文', flush=True)
                 else:
                     combined_input = user_request
+                    print('ℹ️  使用原始请求（旅行信息已在上下文中）', flush=True)
                 
+                print('📍 开始调用Agent执行器...', flush=True)
                 # 使用回调执行Agent（直接传递回调列表）
                 response = agent.agent_executor.invoke(
                     {"input": combined_input},
@@ -505,43 +582,68 @@ def generate_plan_stream():
                 )
                 output = response.get("output", "抱歉，我无法处理您的请求。")
                 
+                print(f'✅ Agent执行完成，输出长度: {len(output)}字符', flush=True)
+                
                 result_queue.put({
                     'type': 'final',
                     'message': output
                 })
             except Exception as e:
+                import traceback
                 error_msg = str(e)[:200] if len(str(e)) > 200 else str(e)
+                print(f'❌ Agent执行异常: {error_msg}', flush=True)
+                traceback.print_exc()
                 result_queue.put({
                     'type': 'error',
                     'message': f'处理请求时出错: {error_msg}'
                 })
             finally:
                 result_queue.put({'type': 'done'})
+                print('✅ Agent线程执行结束', flush=True)
         
         # 启动线程
         agent_thread = threading.Thread(target=run_agent)
         agent_thread.daemon = True
         agent_thread.start()
+        print('✅ [10/10] Agent执行线程已启动', flush=True)
+        print('📍 开始生成SSE流式响应...', flush=True)
         
         # 生成SSE响应
         def generate():
+            # 如果有预算警告，先发送
+            if budget_warning:
+                print(f'⚠️  发送预算警告: {budget_warning[:50]}...', flush=True)
+                yield f"data: {json.dumps({'type': 'warning', 'message': budget_warning}, ensure_ascii=False)}\n\n"
+            
+            event_count = 0
             while True:
                 try:
                     try:
                         result = result_queue.get(timeout=1)
+                        event_count += 1
                     except queue.Empty:
+                        # 超时，发送心跳保持连接
                         yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
                         continue
                     
                     if result['type'] == 'done':
+                        print(f'✅ SSE流结束，共发送{event_count}个事件', flush=True)
                         yield f"data: {json.dumps({'type': 'done'})}\n\n"
                         break
+                    
+                    # 记录关键事件
+                    if result['type'] in ['tool_start', 'tool_end', 'final', 'error']:
+                        print(f'📤 发送事件[{event_count}]: {result["type"]} - {result.get("message", "")[:50]}...', flush=True)
                     
                     yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
                     
                 except Exception as e:
+                    print(f'❌ SSE生成异常: {e}', flush=True)
                     yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                     break
+        
+        print('✅ 返回SSE响应流', flush=True)
+        print('='*80 + '\n', flush=True)
         
         return Response(
             stream_with_context(generate()),
@@ -704,7 +806,8 @@ def generate_plan():
         if error:
             return jsonify({'error': f'Agent初始化失败: {error}'}), 500
         
-        # 设置旅行信息
+        # ========== 修复2: 设置为规划模式，注入旅行信息 ==========
+        agent.set_planning_mode(True)
         agent.set_travel_info(travel_info)
         
         # 计算旅行天数

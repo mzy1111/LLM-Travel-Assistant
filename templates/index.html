@@ -597,12 +597,12 @@
             <form id="travelForm">
                 <div class="form-group">
                     <label for="departureDate">出发日期</label>
-                    <input type="date" id="departureDate" name="departureDate" value="2026-01-17">
+                    <input type="date" id="departureDate" name="departureDate" required>
                 </div>
 
                 <div class="form-group">
                     <label for="returnDate">返回日期</label>
-                    <input type="date" id="returnDate" name="returnDate" value="2026-01-18">
+                    <input type="date" id="returnDate" name="returnDate" required>
                 </div>
 
                 <div class="form-group">
@@ -637,7 +637,7 @@
 
                 <div class="form-group">
                     <label for="budget">预算（元）</label>
-                    <input type="number" id="budget" name="budget" placeholder="例如：5000" min="0" value="1000">
+                    <input type="number" id="budget" name="budget" placeholder="例如：5000" min="0" required>
                 </div>
 
                 <div class="form-group">
@@ -662,20 +662,8 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="travelStyle">旅行风格</label>
-                    <select id="travelStyle" name="travelStyle">
-                        <option value="">请选择</option>
-                        <option value="休闲游">休闲游</option>
-                        <option value="深度游">深度游</option>
-                        <option value="探险游">探险游</option>
-                        <option value="文化游">文化游</option>
-                        <option value="美食游" selected>美食游</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
                     <label for="interests">兴趣偏好</label>
-                    <input type="text" id="interests" name="interests" placeholder="例如：历史、文化、美食" value="历史、文化、美食">
+                    <input type="text" id="interests" name="interests" placeholder="例如：历史、文化、美食、休闲游">
                 </div>
 
                 <div class="form-actions">
@@ -912,7 +900,6 @@
                 budget: document.getElementById('budget').value,
                 hotelPreference: document.getElementById('hotelPreference').value,
                 transportMode: document.getElementById('transportMode').value,
-                travelStyle: document.getElementById('travelStyle').value,
                 interests: document.getElementById('interests').value
             };
         }
@@ -930,6 +917,45 @@
             } else {
                 console.error('initProvinces函数未定义');
             }
+            
+            // ========== 优化1: 前端日期验证 ==========
+            // 设置日期选择器的最小日期为今天
+            const today = new Date().toISOString().split('T')[0];
+            const departureDateInput = document.getElementById('departureDate');
+            const returnDateInput = document.getElementById('returnDate');
+            
+            if (departureDateInput) {
+                departureDateInput.setAttribute('min', today);
+                // 清空默认的过去日期
+                if (departureDateInput.value && departureDateInput.value < today) {
+                    departureDateInput.value = '';
+                }
+                
+                // 监听出发日期变化，更新返回日期的最小值
+                departureDateInput.addEventListener('change', function() {
+                    const departureDate = this.value;
+                    if (returnDateInput) {
+                        returnDateInput.setAttribute('min', departureDate);
+                        
+                        // 如果返回日期早于出发日期，清空返回日期
+                        if (returnDateInput.value && returnDateInput.value < departureDate) {
+                            returnDateInput.value = '';
+                            alert('返回日期不能早于出发日期，请重新选择');
+                        }
+                    }
+                });
+            }
+            
+            if (returnDateInput) {
+                returnDateInput.setAttribute('min', today);
+                // 清空默认的过去日期
+                if (returnDateInput.value && returnDateInput.value < today) {
+                    returnDateInput.value = '';
+                }
+            }
+            
+            console.log('✅ 日期验证已启用：禁止选择过去日期');
+            // ========== 优化1结束 ==========
             
             // 如果有初始查询，自动发送
             {% if initial_query %}

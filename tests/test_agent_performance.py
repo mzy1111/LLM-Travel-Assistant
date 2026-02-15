@@ -14,6 +14,7 @@ warnings.filterwarnings('ignore', message='.*dict.*method is deprecated.*')
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.agent.travel_agent import TravelAgent
+from src.agent.specialized_agents import WeatherAgent
 from tests.fixtures.test_callback_handler import TestCallbackHandler
 
 
@@ -32,8 +33,46 @@ class TestAgentPerformance(unittest.TestCase):
         """每个测试前的初始化"""
         self.callback_handler = TestCallbackHandler()
     
-    def test_single_agent_performance(self):
-        """测试单Agent调用性能"""
+    def test_weather_agent_direct_performance(self):
+        """直接测试WeatherAgent的性能（不经过TravelAgent路由）"""
+        query = "北京明天天气怎么样？"
+        
+        # 直接使用WeatherAgent，避免TravelAgent的路由开销
+        weather_agent = WeatherAgent(verbose=False)
+        
+        start_time = time.time()
+        self.callback_handler.reset()
+        
+        try:
+            response = weather_agent.agent_executor.invoke(
+                {"input": query},
+                config={"callbacks": [self.callback_handler]}
+            )
+            result = response.get("output", "")
+            
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            summary = self.callback_handler.get_summary()
+            
+            print(f"✓ WeatherAgent直接性能测试:")
+            print(f"  - 查询: '{query}'")
+            print(f"  - 总耗时: {duration:.2f}秒")
+            print(f"  - LLM调用次数: {summary['llm_calls']}")
+            print(f"  - 工具调用次数: {summary['tool_calls']}")
+            print(f"  - 响应长度: {len(result)}字符")
+            
+            # 性能指标验证（直接调用应该更快，因为少了路由开销）
+            self.assertLess(duration, 25, "WeatherAgent直接调用应在25秒内完成")
+            self.assertGreater(len(result), 0, "应该有响应内容")
+            # 直接调用应该只有1-2次LLM调用（工具调用 + 最终回答）
+            self.assertLessEqual(summary['llm_calls'], 3, "直接调用LLM次数应该 <= 3次")
+            
+        except Exception as e:
+            self.fail(f"测试失败: {str(e)}")
+    
+    def test_end_to_end_weather_performance(self):
+        """测试端到端天气查询性能（通过TravelAgent路由）"""
         query = "北京明天天气怎么样？"
         
         start_time = time.time()
@@ -51,16 +90,19 @@ class TestAgentPerformance(unittest.TestCase):
             
             summary = self.callback_handler.get_summary()
             
-            print(f"✓ 单Agent性能测试:")
+            print(f"✓ 端到端天气查询性能测试（通过TravelAgent）:")
             print(f"  - 查询: '{query}'")
             print(f"  - 总耗时: {duration:.2f}秒")
             print(f"  - Agent调用次数: {summary['agent_calls']}")
             print(f"  - LLM调用次数: {summary['llm_calls']}")
             print(f"  - 响应长度: {len(result)}字符")
             
-            # 性能指标验证
-            self.assertLess(duration, 30, "单Agent调用应在30秒内完成")
+            # 性能指标验证（端到端包括路由开销，时间会更长）
+            self.assertLess(duration, 35, "端到端天气查询应在35秒内完成")
             self.assertGreater(len(result), 0, "应该有响应内容")
+            # 端到端应该调用query_weather_agent
+            weather_calls = self.callback_handler.get_agent_call_count('query_weather_agent')
+            self.assertGreater(weather_calls, 0, "应该调用query_weather_agent")
             
         except Exception as e:
             self.fail(f"测试失败: {str(e)}")

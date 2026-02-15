@@ -40,12 +40,17 @@ class TestAgentRouting(unittest.TestCase):
         # 检查必要的环境变量
         if not os.getenv('OPENAI_API_KEY'):
             raise unittest.SkipTest("OPENAI_API_KEY未设置，跳过测试")
-        
-        # 创建测试用的Agent实例
-        cls.agent = TravelAgent(verbose=False)
     
     def setUp(self):
         """每个测试前的初始化"""
+        # 为每个测试创建新的Agent实例，禁用memory，使用唯一的session_id
+        # 这样可以避免测试之间的记忆干扰
+        import uuid
+        self.agent = TravelAgent(
+            verbose=False, 
+            enable_memory=False,  # 禁用memory，避免测试之间的干扰
+            session_id=str(uuid.uuid4())  # 使用唯一的session_id
+        )
         self.callback_handler = TestCallbackHandler()
     
     def test_weather_routing(self):
@@ -96,9 +101,21 @@ class TestAgentRouting(unittest.TestCase):
     def test_transport_routing(self):
         """测试交通路线路由"""
         test_cases = [
+            # 时间查询（不同表达方式）
             "从北京到上海自驾需要多久？",
-            "查询从广州到深圳的交通路线",
+            "北京到上海开车要多少时间？",
+            "从广州到深圳需要多长时间？",
+            # 距离查询（不同表达方式）
             "北京到天津的距离是多少？",
+            "上海到杭州有多远？",
+            "从深圳到广州的距离",
+            # 路线查询（不同表达方式）
+            "查询从广州到深圳的交通路线",
+            "帮我规划从北京到天津的自驾路线",
+            "从上海到南京怎么走？",
+            # 费用查询
+            "从北京到上海自驾需要多少钱？",
+            "广州到深圳的过路费是多少？",
         ]
         
         for query in test_cases:
@@ -114,8 +131,20 @@ class TestAgentRouting(unittest.TestCase):
                     call_sequence = self.callback_handler.get_agent_call_sequence()
                     transport_calls = self.callback_handler.get_agent_call_count('query_transport_agent')
                     
+                    # 如果LLM没有调用Agent，输出调试信息
+                    if transport_calls == 0:
+                        print(f"⚠️  警告: 查询'{query}'未调用交通Agent")
+                        print(f"   调用序列: {call_sequence}")
+                        print(f"   LLM响应: {result[:200]}...")
+                        # 检查响应是否包含交通相关信息（LLM可能直接回答了）
+                        transport_keywords = ['距离', '公里', '时间', '小时', '分钟', '路线', '自驾', 'distance', 'route']
+                        has_transport_info = any(keyword in result for keyword in transport_keywords)
+                        if has_transport_info:
+                            print(f"   ⚠️  LLM直接回答了交通问题，未调用Agent（这是可接受的，但不符合预期）")
+                        # 仍然断言失败，因为我们的目标是测试路由功能
+                    
                     self.assertGreater(transport_calls, 0,
-                        f"查询'{query}'应该调用交通Agent，但调用序列为: {call_sequence}")
+                        f"查询'{query}'应该调用交通Agent，但调用序列为: {call_sequence}，响应: {result[:100]}")
                     
                     print(f"✓ 路由测试通过: '{query}' -> 交通Agent (调用{transport_calls}次)")
                     print(f"   Agent回答: {result}")

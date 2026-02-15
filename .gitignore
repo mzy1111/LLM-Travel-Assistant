@@ -4,27 +4,13 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# 虚拟环境
+# Virtual Environment
+.venv/
 venv/
-env/
 ENV/
-.venv
+env/
+.virtualenv/
 
 # IDE
 .vscode/
@@ -32,33 +18,51 @@ ENV/
 *.swp
 *.swo
 *~
+.DS_Store
 
-# 环境变量
+# Environment Variables
 .env
 env
+!env.example
 
-# 数据文件
+# Data Files
+data/vector_store/
 data/users.json
-*.db
-*.sqlite
+data/jingdian/
 
-# 日志
-*.log
+# Logs
 logs/
+*.log
 
-# 测试文件（保留测试目录结构）
-# tests/
+# Test Coverage
+.coverage
+htmlcov/
+.pytest_cache/
 
-# 文档（保留文档目录结构）
-# docs/
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
 
-# 脚本（保留脚本目录结构）
-# scripts/
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# 操作系统
+# Model Cache
+.cache/
+models/
+
+# Temporary Files
+*.tmp
+*.bak
+*.swp
 .DS_Store
 Thumbs.db
 
-# 向量数据库
-chroma_db/
+# Windows
+desktop.ini
 
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride

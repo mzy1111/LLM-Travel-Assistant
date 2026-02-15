@@ -37,6 +37,9 @@ class TravelAgent:
         self.travel_info_added_to_conversation = False
         self.last_travel_info_hash = None
         
+        # 对话模式：chat（聊天模式）或 planning（规划模式）
+        self.conversation_mode = "chat"  # 默认为聊天模式
+        
         # 初始化专门的Agent实例
         self.logger.log_section("初始化专门的Agent")
         self.weather_agent = WeatherAgent(verbose=self.verbose)
@@ -55,6 +58,11 @@ class TravelAgent:
             raise ValueError("OPENAI_API_KEY 未设置，请在 env 文件中配置API密钥")
         
         os.environ["OPENAI_API_KEY"] = config.openai_api_key
+        
+        # ========== 修复SSL连接问题 ==========
+        # 方法1：使用环境变量禁用SSL验证（适用于代理环境）
+        import ssl
+        ssl._create_default_https_context = ssl._create_unverified_context
         
         # 构建参数字典，只传递基本参数
         llm_kwargs = {
@@ -102,16 +110,23 @@ class TravelAgent:
         # 系统提示词
         system_prompt = """你是一个专业的智能旅行助手主协调者，负责理解用户需求并调用相应的专门Agent来完成任务。
 
+**重要：你必须真正调用工具，不能模拟或假装调用工具**
+
 你的职责：
 1. **理解用户意图**：分析用户的问题，判断需要调用哪个专门Agent
 2. **协调专门Agent**：根据用户需求调用相应的专门Agent：
-   - 天气查询 → 调用 query_weather_agent
-   - 交通路线 → 调用 query_transport_agent
-   - 酒店价格 → 调用 query_hotel_agent
-   - 景点信息 → 调用 query_attraction_agent
-   - 行程规划 → 调用 query_planning_agent
-   - 个性化推荐 → 调用 query_recommendation_agent
+   - 天气查询 → **必须真正调用** query_weather_agent（使用工具，不要模拟）
+   - 交通路线 → **必须真正调用** query_transport_agent（使用工具，不要模拟）
+   - 酒店价格 → **必须真正调用** query_hotel_agent（使用工具，不要模拟）
+   - 景点信息 → **必须真正调用** query_attraction_agent（使用工具，不要模拟）
+   - 行程规划 → **必须真正调用** query_planning_agent（使用工具，不要模拟）
+   - 个性化推荐 → **必须真正调用** query_recommendation_agent（使用工具，不要模拟）
 3. **直接返回专门Agent的回答**：专门Agent已经根据用户问题提供了合适的回答，直接返回即可，不要添加额外信息或进行二次整合
+
+**绝对禁止**：
+- 不要使用"根据交通Agent的查询结果"这样的表述来假装调用了工具
+- 不要基于常识或记忆直接回答，必须真正调用工具
+- 不要模拟工具调用的结果，必须使用实际的工具调用
 
 可用的专门Agent：
 - **天气Agent** (query_weather_agent)：专门负责天气查询，使用高德地图API获取准确天气信息
@@ -126,12 +141,25 @@ class TravelAgent:
 - **灵活处理可选信息**：出发地和目的地都是可选的。如果用户未提供目的地，应根据用户的偏好、预算和旅行天数推荐合适的目的地
 - **智能路由**：根据用户问题类型，调用相应的专门Agent：
   - 天气相关问题 → **必须**调用 query_weather_agent（只需调用一次），不要直接回答天气问题
-  - 交通路线问题 → **必须**调用 query_transport_agent（只需调用一次），不要直接回答路线问题
+    - 例如："天气"、"天气预报"、"明天天气"、"北京明天天气"、"天气怎么样"等 → **必须**调用 query_weather_agent
+    - **绝对禁止**：不要直接回答任何天气相关问题，即使问题看起来很简单（如"北京明天天气"、"天气怎么样"），也必须调用 query_weather_agent 获取准确数据
+    - **关键原则**：无论你"知道"答案与否，无论问题看起来多么简单，都必须调用 query_weather_agent，不能基于常识或估算直接回答
+  - **交通路线问题（包括距离、时间、路线、费用等） → **必须**调用 query_transport_agent（只需调用一次），不要直接回答路线问题**
+    - **距离查询**：用户问"距离是多少？"、"有多远？"、"距离"、"多远"等 → **必须**调用 query_transport_agent
+    - **时间查询**：用户问"需要多久？"、"多久能到？"、"时间"、"多长时间"、"开车要多少时间"等 → **必须**调用 query_transport_agent
+    - **路线查询**：用户问"路线"、"交通路线"、"怎么走"、"规划路线"、"自驾路线"等 → **必须**调用 query_transport_agent
+    - **费用查询**：用户问"费用"、"过路费"、"油费"、"需要多少钱"等 → **必须**调用 query_transport_agent
+    - **绝对禁止**：不要直接回答任何交通相关问题，即使问题看起来很简单（如"距离是多少？"、"有多远？"、"需要多久？"、"怎么走？"、"需要多少钱？"），也必须调用 query_transport_agent 获取准确数据
+    - **关键原则**：无论你"知道"答案与否，无论问题看起来多么简单，都必须调用 query_transport_agent，不能基于常识或估算直接回答
   - 酒店价格问题 → **必须**调用 query_hotel_agent（只需调用一次），不要直接回答酒店问题
+    - 例如："酒店价格"、"酒店推荐"、"住宿价格"、"酒店多少钱"等 → **必须**调用 query_hotel_agent
+    - **绝对禁止**：不要直接回答任何酒店相关问题，即使问题看起来很简单（如"广州的酒店价格是多少？"），也必须调用 query_hotel_agent
   - 景点相关问题 → **必须**调用 query_attraction_agent（只需调用一次，该Agent会返回完整的景点列表），不要直接回答景点问题
   - 行程规划需求 → **必须**调用 query_planning_agent（只需调用一次），不要直接规划行程
+    - 例如："帮我规划"、"制定行程"、"行程计划"、"旅游规划"等 → **必须**调用 query_planning_agent
+    - **绝对禁止**：不要直接规划行程，即使问题看起来很简单（如"我想去广州旅游，帮我规划一下"），也必须调用 query_planning_agent
   - 推荐需求 → **必须**调用 query_recommendation_agent（只需调用一次），不要直接推荐
-- **必须调用工具**：对于任何需要查询信息的问题，都必须调用相应的专门Agent工具，不能直接回答。只有专门Agent才能获取准确的实时数据。
+- **必须调用工具**：对于任何需要查询信息的问题，都必须调用相应的专门Agent工具，不能直接回答。只有专门Agent才能获取准确的实时数据。**即使问题看起来很简单，也必须调用工具，不能基于常识或估算直接回答。**
 - **避免重复调用**：每个专门Agent只需调用一次即可获得完整信息，不要重复调用同一个Agent
 - **综合查询**：当用户需要规划完整行程时，应该：
   1. 先调用 query_transport_agent 查询交通路线（如果有出发地和目的地）
@@ -153,15 +181,42 @@ class TravelAgent:
 
 **重要**：专门Agent已经根据用户问题的具体程度提供了合适的回答。如果用户只问了简单问题（如"需要多久？"），专门Agent会返回简洁回答，你应该直接返回，不要添加额外信息。如果用户问了详细规划，专门Agent会返回详细信息，你也直接返回即可。
 
+**关键原则（必须严格遵守）**：
+- **永远不要直接回答**：即使问题看起来很简单（如"距离是多少？"、"有多远？"、"需要多久？"、"怎么走？"、"需要多少钱？"），也必须调用相应的专门Agent工具
+- **不要基于常识回答**：不要使用你的知识库中的距离、时间等信息直接回答，必须通过工具获取实时准确数据
+- **不要基于记忆回答**：即使你之前回答过类似问题，也必须重新调用工具获取最新数据
+- **距离查询示例**：用户问"北京到天津的距离是多少？"或"上海到杭州有多远？"或"从深圳到广州的距离" → **必须**调用 query_transport_agent，不要直接回答"大约120公里"等估算值
+- **时间查询示例**：用户问"从北京到上海需要多久？"或"北京到上海开车要多少时间？" → **必须**调用 query_transport_agent，不要直接回答时间
+- **路线查询示例**：用户问"从广州到深圳的交通路线"或"从上海到南京怎么走？"或"帮我规划从北京到天津的自驾路线" → **必须**调用 query_transport_agent，不要直接回答路线
+- **费用查询示例**：用户问"从北京到上海自驾需要多少钱？"或"广州到深圳的过路费是多少？" → **必须**调用 query_transport_agent，不要直接回答费用
+
 回答要友好、专业，直接返回专门Agent的回答，不要添加额外信息。"""
         
-        # 创建提示模板
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
+        # 创建内存（如果启用）
+        memory = None
+        if self.enable_memory:
+            memory = ConversationBufferMemory(
+                memory_key="chat_history",
+                return_messages=True,
+                output_key="output",  # 明确指定输出键
+                input_key="input"     # 明确指定输入键
+            )
+        
+        # 创建提示模板（根据是否有memory决定是否包含chat_history）
+        if self.enable_memory:
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ])
+        else:
+            # 当memory禁用时，不包含chat_history占位符
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("human", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ])
         
         # 创建Agent（使用专门Agent工具）
         agent = create_openai_tools_agent(
@@ -169,14 +224,6 @@ class TravelAgent:
             tools=agent_tools,
             prompt=prompt
         )
-        
-        # 创建内存（如果启用）
-        memory = None
-        if self.enable_memory:
-            memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                return_messages=True
-            )
         
         # 创建Agent执行器
         # 关闭LangChain的verbose输出，使用我们自己的日志系统
@@ -214,13 +261,16 @@ class TravelAgent:
             func=call_weather_agent,
             description="""查询天气信息的专门Agent。当用户询问天气、需要根据天气调整行程时使用。
 
-使用场景：
-- 用户询问任何城市的天气（今天、明天、未来几天等）
+使用场景（必须调用此工具，不要直接回答）：
+- 用户询问天气（如"天气"、"天气预报"、"明天天气"、"北京明天天气"、"天气怎么样"、"今天天气"、"3天后天气"等）
+- 用户询问特定城市的天气（如"北京天气"、"上海明天天气"、"广州3天后的天气"等）
 - 需要根据天气调整旅行计划
 - 查询特定日期的天气预报
 
 重要：
-- 对于任何天气相关的问题，都必须调用此工具，不要直接回答
+- **绝对禁止直接回答**：对于任何涉及天气的问题，都必须调用此工具，不要直接回答
+- **不要基于常识回答**：即使你"知道"答案，也必须调用此工具获取准确数据
+- **不要基于记忆回答**：不要使用之前查询过的天气信息，必须调用此工具获取最新数据
 - 输入应该包含城市名称和日期（YYYY-MM-DD格式）
 - 如果用户使用相对日期（如"明天"、"3天后"），需要先计算具体日期再调用此工具"""
         ))
@@ -242,7 +292,21 @@ class TravelAgent:
         tools.append(Tool(
             name="query_transport_agent",
             func=call_transport_agent,
-            description="查询交通路线信息的专门Agent。当用户询问交通路线、距离、时间、费用时使用。对于自驾方式，会使用高德地图API精确计算。输入应该包含出发地、目的地和出行方式。"
+            description="""查询交通路线信息的专门Agent。当用户询问交通路线、距离、时间、费用时使用。
+
+使用场景（必须调用此工具，不要直接回答）：
+- 用户询问距离（如"距离是多少？"、"有多远？"、"北京到天津的距离"、"上海到杭州有多远？"、"从深圳到广州的距离"）
+- 用户询问时间（如"需要多久？"、"多久能到？"、"多长时间"、"开车要多少时间"）
+- 用户询问路线（如"路线规划"、"交通路线"、"怎么走"、"规划路线"、"自驾路线"）
+- 用户询问费用（如"过路费"、"油费"、"需要多少钱"、"费用是多少"）
+- 任何涉及两个地点之间的交通信息查询
+
+重要：
+- **绝对禁止直接回答**：对于任何涉及距离、时间、路线、费用的交通问题，都必须调用此工具，不要直接回答
+- **不要基于常识回答**：即使你"知道"答案，也必须调用此工具获取准确数据
+- **不要基于记忆回答**：即使之前回答过类似问题，也必须重新调用工具
+- 对于自驾方式，会使用高德地图API精确计算距离和时间
+- 输入应该包含出发地、目的地和出行方式（如"自驾"）"""
         ))
         
         # 酒店Agent工具
@@ -262,7 +326,17 @@ class TravelAgent:
         tools.append(Tool(
             name="query_hotel_agent",
             func=call_hotel_agent,
-            description="查询酒店价格信息的专门Agent。当用户询问酒店价格、住宿预算时使用。输入应该包含城市、入住日期、退房日期和酒店偏好。"
+            description="""查询酒店价格信息的专门Agent。当用户询问酒店价格、住宿预算时使用。
+
+使用场景（必须调用此工具，不要直接回答）：
+- 用户询问酒店价格（如"酒店价格"、"酒店多少钱"、"住宿价格"、"广州的酒店价格是多少？"）
+- 用户询问酒店推荐（如"酒店推荐"、"有什么酒店"、"推荐酒店"）
+- 用户询问住宿预算（如"住宿预算"、"酒店费用"）
+
+重要：
+- **绝对禁止直接回答**：对于任何涉及酒店价格、推荐、预算的问题，都必须调用此工具，不要直接回答
+- **不要基于常识回答**：即使你"知道"答案，也必须调用此工具获取准确数据
+- 输入应该包含城市、入住日期、退房日期和酒店偏好（如果用户提供了这些信息）"""
         ))
         
         # 景点Agent工具
@@ -284,6 +358,23 @@ class TravelAgent:
             func=call_attraction_agent,
             description="查询景点信息的专门Agent。当用户询问景点门票、景点信息、景点问答、景点推荐时使用。输入应该包含城市名称和可选的景点名称或兴趣偏好（如历史、文化、美食等）。该Agent会查询并返回完整的景点列表信息，包括景点名称、地址、区域、人均消费等。"
         ))
+
+        # 基于本地CSV的景点详情查询工具
+        from src.agent.tools import get_attraction_details_local
+
+        tools.append(Tool(
+            name="get_attraction_details_local",
+            func=get_attraction_details_local,
+            description="""获取指定景点的详细信息（基于本地数据库）。当用户询问特定景点的详细信息时使用。
+
+使用场景：
+- 用户询问景点的详细信息（如"故宫的开放时间"、"八达岭长城的门票价格"）
+- 用户需要景点的完整信息
+
+重要：
+- 必须提供城市名称和景点名称
+- 返回景点的完整信息，包括地址、介绍、开放时间、门票等"""
+        ))
         
         # 规划Agent工具
         def call_planning_agent(query: str) -> str:
@@ -302,14 +393,40 @@ class TravelAgent:
         tools.append(Tool(
             name="query_planning_agent",
             func=call_planning_agent,
-            description="规划旅行行程的专门Agent。当用户需要规划详细行程时使用。该Agent会整合天气、酒店、交通、景点等信息。输入应该包含旅行天数、目的地、预算、偏好等信息。"
+            description="""规划旅行行程的专门Agent。当用户需要规划详细行程时使用。该Agent会整合天气、酒店、交通、景点等信息。
+
+使用场景（必须调用此工具，不要直接规划）：
+- 用户要求规划行程（如"帮我规划"、"制定行程"、"行程计划"、"旅游规划"、"我想去XX旅游，帮我规划一下"）
+- 用户需要详细的旅行安排（如"安排行程"、"行程安排"、"旅行计划"）
+
+重要：
+- **绝对禁止直接规划**：对于任何行程规划需求，都必须调用此工具，不要直接规划行程
+- **不要基于常识规划**：即使你"知道"如何规划，也必须调用此工具获取准确的实时信息
+- 输入应该包含旅行天数、目的地、预算、偏好等信息（如果用户提供了这些信息）"""
         ))
         
         # 推荐Agent工具
         def call_recommendation_agent(query: str) -> str:
-            self.logger.log_agent_call_start("推荐Agent (RecommendationAgent)", query)
+            # ========== 修复1: 传递对话历史到专门Agent ==========
+            # 从Memory中获取最近的对话历史，提供上下文
+            enhanced_query = query
+            if self.enable_memory and hasattr(self.agent_executor, 'memory') and self.agent_executor.memory:
+                try:
+                    chat_history = self.agent_executor.memory.chat_memory.messages[-4:]  # 最近2轮对话
+                    if chat_history:
+                        context_parts = []
+                        for msg in chat_history:
+                            msg_type = "用户" if msg.type == "human" else "助手"
+                            context_parts.append(f"{msg_type}: {msg.content[:200]}")  # 限制长度
+                        context = "\n".join(context_parts)
+                        enhanced_query = f"对话历史:\n{context}\n\n当前查询: {query}"
+                        self.logger.log_info(f"已添加对话历史上下文（{len(chat_history)}条消息）")
+                except Exception as e:
+                    self.logger.log_info(f"获取对话历史失败: {e}，使用原始查询")
+            
+            self.logger.log_agent_call_start("推荐Agent (RecommendationAgent)", enhanced_query)
             try:
-                result = self.recommendation_agent.query(query)
+                result = self.recommendation_agent.query(enhanced_query)
                 self.logger.log_agent_call_end("推荐Agent (RecommendationAgent)", success=True, response_length=len(result))
                 return result
             except Exception as e:
@@ -325,6 +442,32 @@ class TravelAgent:
             description="提供个性化推荐的专门Agent。当用户需要推荐目的地、景点、活动时使用。输入应该包含目的地、兴趣偏好、旅行风格等信息。"
         ))
         
+        # ========== 新增：RAG景点搜索工具 ==========
+        from src.agent.tools import search_attractions_rag, get_city_all_attractions_rag
+        
+        tools.append(Tool(
+            name="search_attractions_rag",
+            func=search_attractions_rag,
+            description="""使用RAG技术搜索景点。支持自然语言查询，如：
+- "北京的历史文化景点"
+- "上海适合亲子游的地方"
+- "广州的免费景点"
+- "深圳的网红打卡地"
+
+使用场景：
+- 用户询问特定类型的景点（如"历史景点"、"免费景点"、"亲子景点"）
+- 用户需要基于兴趣偏好搜索景点
+- 用户想了解某个城市的特色景点
+
+输入格式：query（查询描述），city（可选，城市名称）"""
+        ))
+        
+        tools.append(Tool(
+            name="get_city_all_attractions_rag",
+            func=get_city_all_attractions_rag,
+            description="获取指定城市的所有景点列表（使用RAG）。输入：城市名称"
+        ))
+        
         return tools
     
     def chat(self, user_input: str) -> str:
@@ -338,22 +481,29 @@ class TravelAgent:
             Agent的回复
         """
         try:
-            # 检查旅行信息是否变化
-            import hashlib
-            travel_info_str = str(sorted(self.travel_info.items()))
-            current_travel_info_hash = hashlib.md5(travel_info_str.encode()).hexdigest()
-            
-            # 如果旅行信息变化了，或者还没有添加到对话中，则添加
-            # 否则直接使用用户输入，避免重复添加旅行信息
-            if self.travel_info and (not self.travel_info_added_to_conversation or current_travel_info_hash != self.last_travel_info_hash):
-                travel_context = self._format_travel_info()
-                combined_input = f"{travel_context}\n\n用户问题: {user_input}"
-                self.travel_info_added_to_conversation = True
-                self.last_travel_info_hash = current_travel_info_hash
+            # ========== 修复2: 区分规划模式和聊天模式 ==========
+            # 只在规划模式下注入旅行信息
+            if self.conversation_mode == "planning" and self.travel_info:
+                # 检查旅行信息是否变化
+                import hashlib
+                travel_info_str = str(sorted(self.travel_info.items()))
+                current_travel_info_hash = hashlib.md5(travel_info_str.encode()).hexdigest()
+                
+                # 如果旅行信息变化了，或者还没有添加到对话中，则添加
+                if not self.travel_info_added_to_conversation or current_travel_info_hash != self.last_travel_info_hash:
+                    travel_context = self._format_travel_info()
+                    combined_input = f"{travel_context}\n\n用户问题: {user_input}"
+                    self.travel_info_added_to_conversation = True
+                    self.last_travel_info_hash = current_travel_info_hash
+                    self.logger.log_info("规划模式：已注入旅行信息到上下文")
+                else:
+                    combined_input = user_input
+                    self.logger.log_info("规划模式：旅行信息已在上下文中")
             else:
-                # 旅行信息已经添加过且未变化，直接使用用户输入
-                # ConversationBufferMemory会自动管理历史对话
+                # 聊天模式：不注入旅行信息，直接使用用户输入
                 combined_input = user_input
+                if self.conversation_mode == "chat":
+                    self.logger.log_info("聊天模式：不注入旅行信息")
             
             # 记录主协调Agent的调用
             self.logger.log_section("主协调Agent处理用户请求")
@@ -362,8 +512,24 @@ class TravelAgent:
                 self.logger.log_info(f"旅行信息: {list(self.travel_info.keys())}")
             
             # 调用Agent执行器（ConversationBufferMemory会自动包含历史对话）
-            response = self.agent_executor.invoke({"input": combined_input})
-            output = response.get("output", "抱歉，我无法处理您的请求。")
+            print(f'\n📍 [Agent] 准备调用agent_executor.invoke...', flush=True)
+            print(f'📍 [Agent] 输入长度: {len(combined_input)} 字符', flush=True)
+            print(f'📍 [Agent] LLM模型: {config.llm_model}', flush=True)
+            print(f'📍 [Agent] API地址: {config.openai_api_base}', flush=True)
+            
+            try:
+                response = self.agent_executor.invoke({"input": combined_input})
+                print(f'✅ [Agent] agent_executor.invoke 调用成功', flush=True)
+                output = response.get("output", "抱歉，我无法处理您的请求。")
+                print(f'✅ [Agent] 获取到输出，长度: {len(output)} 字符', flush=True)
+            except Exception as invoke_error:
+                print(f'❌ [Agent] agent_executor.invoke 调用失败', flush=True)
+                print(f'❌ [Agent] 错误类型: {type(invoke_error).__name__}', flush=True)
+                print(f'❌ [Agent] 错误信息: {str(invoke_error)}', flush=True)
+                import traceback
+                print(f'❌ [Agent] 堆栈跟踪:', flush=True)
+                traceback.print_exc()
+                raise
             
             self.logger.log_info(f"主协调Agent响应完成，输出长度: {len(output)} 字符")
             
@@ -469,6 +635,18 @@ class TravelAgent:
             旅行信息字典
         """
         return self.travel_info
+    
+    def set_planning_mode(self, enabled: bool):
+        """
+        设置对话模式
+        
+        Args:
+            enabled: True为规划模式（注入旅行信息），False为聊天模式（不注入旅行信息）
+        """
+        old_mode = self.conversation_mode
+        self.conversation_mode = "planning" if enabled else "chat"
+        if old_mode != self.conversation_mode:
+            self.logger.log_info(f"对话模式切换: {old_mode} -> {self.conversation_mode}")
     
     def chat_stream(self, user_input: str, on_tool_call: Optional[Callable[[str, str], None]] = None) -> Generator[str, None, None]:
         """

@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地景点查询</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #4a6fa5;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .search-section {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h2 {
+            color: #4a6fa5;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #4a6fa5;
+            box-shadow: 0 0 0 2px rgba(74, 111, 165, 0.2);
+        }
+
+        button {
+            background-color: #4a6fa5;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #3a5a85;
+        }
+
+        button:active {
+            background-color: #2a4a75;
+        }
+
+        .results-section {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .result-item {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+
+        .result-item h3 {
+            color: #4a6fa5;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .result-item .meta {
+            color: #777;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+
+        .result-item .content {
+            background-color: white;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #4a6fa5;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }
+
+        .error {
+            background-color: #ffebee;
+            border: 1px solid #ffcdd2;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #c62828;
+        }
+
+        .success {
+            background-color: #e8f5e8;
+            border: 1px solid #c8e6c9;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #2e7d32;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #4a6fa5;
+            font-weight: bold;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: bold;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            color: #4a6fa5;
+        }
+
+        .tab.active {
+            color: #4a6fa5;
+            border-bottom-color: #4a6fa5;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .cities-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .city-card {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .city-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .city-card h3 {
+            color: #4a6fa5;
+            margin-bottom: 10px;
+        }
+
+        .city-card .count {
+            color: #777;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 本地景点查询系统</h1>
+
+        <div class="search-section">
+            <div class="tabs">
+                <div class="tab active" data-tab="search">搜索景点</div>
+                <div class="tab" data-tab="details">景点详情</div>
+                <div class="tab" data-tab="list">列出景点</div>
+                <div class="tab" data-tab="cities">城市列表</div>
+            </div>
+
+            <div class="tab-content active" id="search">
+                <h2>🔍 搜索景点</h2>
+                <form id="search-form">
+                    <div class="form-group">
+                        <label for="search-query">查询关键词</label>
+                        <input type="text" id="search-query" placeholder="例如：故宫、历史景点、适合家庭游玩" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="search-city">城市（可选）</label>
+                        <select id="search-city">
+                            <option value="">所有城市</option>
+                            <option value="北京">北京</option>
+                            <option value="上海">上海</option>
+                            <option value="天津">天津</option>
+                        </select>
+                    </div>
+                    <button type="submit">搜索</button>
+                </form>
+            </div>
+
+            <div class="tab-content" id="details">
+                <h2>📋 景点详情</h2>
+                <form id="details-form">
+                    <div class="form-group">
+                        <label for="details-name">景点名称</label>
+                        <input type="text" id="details-name" placeholder="例如：故宫博物院" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="details-city">城市</label>
+                        <select id="details-city" required>
+                            <option value="">选择城市</option>
+                            <option value="北京">北京</option>
+                            <option value="上海">上海</option>
+                            <option value="天津">天津</option>
+                        </select>
+                    </div>
+                    <button type="submit">查询详情</button>
+                </form>
+            </div>
+
+            <div class="tab-content" id="list">
+                <h2>📖 列出景点</h2>
+                <form id="list-form">
+                    <div class="form-group">
+                        <label for="list-city">城市（可选）</label>
+                        <select id="list-city">
+                            <option value="">所有城市</option>
+                            <option value="北京">北京</option>
+                            <option value="上海">上海</option>
+                            <option value="天津">天津</option>
+                        </select>
+                    </div>
+                    <button type="submit">列出景点</button>
+                </form>
+            </div>
+
+            <div class="tab-content" id="cities">
+                <h2>🌆 城市列表</h2>
+                <button id="load-cities">加载城市列表</button>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">加载中...</div>
+
+        <div class="results-section">
+            <h2>📊 结果</h2>
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <script>
+        // API 基础 URL
+        const API_BASE = 'http://localhost:5001/api/local';
+
+        // 标签切换
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const tabId = this.dataset.tab;
+                
+                // 更新标签状态
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                
+                // 更新内容状态
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+
+        // 显示加载状态
+        function showLoading() {
+            document.getElementById('loading').classList.add('show');
+        }
+
+        // 隐藏加载状态
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('show');
+        }
+
+        // 显示结果
+        function showResults(data) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (data.success) {
+                if (data.results) {
+                    // 搜索结果
+                    let html = `<div class="success">找到 ${data.total} 个结果</div>`;
+                    data.results.forEach(result => {
+                        html += `
+                            <div class="result-item">
+                                <h3>${result.name}</h3>
+                                <div class="meta">${result.city} · ${result.address}</div>
+                                <div class="content">${result.content}</div>
+                            </div>
+                        `;
+                    });
+                    resultsDiv.innerHTML = html;
+                } else if (data.attraction) {
+                    // 景点详情
+                    const attraction = data.attraction;
+                    let html = `<div class="success">景点详情查询成功</div>`;
+                    html += `
+                        <div class="result-item">
+                            <h3>${attraction['名字'] || '未知'}</h3>
+                            <div class="meta">${attraction['地址'] || '未知'}</div>
+                            <div class="content">
+                                <p><strong>介绍：</strong>${attraction['介绍'] || '无'}</p>
+                                <p><strong>开放时间：</strong>${attraction['开放时间'] || '无'}</p>
+                                <p><strong>评分：</strong>${attraction['评分'] || '无'}</p>
+                                <p><strong>建议游玩时间：</strong>${attraction['建议游玩时间'] || '无'}</p>
+                                <p><strong>建议季节：</strong>${attraction['建议季节'] || '无'}</p>
+                                <p><strong>门票：</strong>${attraction['门票'] || '无'}</p>
+                                <p><strong>小贴士：</strong>${attraction['小贴士'] || '无'}</p>
+                            </div>
+                        </div>
+                    `;
+                    resultsDiv.innerHTML = html;
+                } else if (data.attractions) {
+                    // 列出景点
+                    let html = `<div class="success">找到 ${data.total} 个景点</div>`;
+                    data.attractions.forEach(attraction => {
+                        html += `
+                            <div class="result-item">
+                                <h3>${attraction['名字'] || '未知'}</h3>
+                                <div class="meta">${attraction['city'] || ''} · ${attraction['地址'] || '未知'}</div>
+                                <div class="content">
+                                    <p><strong>介绍：</strong>${attraction['介绍'] ? attraction['介绍'].substring(0, 200) + '...' : '无'}</p>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    resultsDiv.innerHTML = html;
+                } else if (data.cities) {
+                    // 城市列表
+                    let html = `<div class="success">找到 ${data.cities.length} 个城市</div>`;
+                    html += '<div class="cities-grid">';
+                    data.cities.forEach(city => {
+                        html += `
+                            <div class="city-card">
+                                <h3>${city}</h3>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    resultsDiv.innerHTML = html;
+                } else if (data.test_results) {
+                    // 测试结果
+                    let html = `<div class="success">${data.message}</div>`;
+                    html += '<div class="cities-grid">';
+                    data.test_results.forEach(item => {
+                        html += `
+                            <div class="city-card">
+                                <h3>${item.city}</h3>
+                                <div class="count">${item.count} 个景点</div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    resultsDiv.innerHTML = html;
+                }
+            } else {
+                resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+            }
+        }
+
+        // 搜索表单
+        document.getElementById('search-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const query = document.getElementById('search-query').value;
+            const city = document.getElementById('search-city').value;
+            
+            showLoading();
+            
+            fetch(`${API_BASE}/search`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query, city: city || null })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                showResults(data);
+            })
+            .catch(error => {
+                hideLoading();
+                document.getElementById('results').innerHTML = `<div class="error">请求失败：${error.message}</div>`;
+            });
+        });
+
+        // 详情表单
+        document.getElementById('details-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('details-name').value;
+            const city = document.getElementById('details-city').value;
+            
+            showLoading();
+            
+            fetch(`${API_BASE}/details`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name, city })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                showResults(data);
+            })
+            .catch(error => {
+                hideLoading();
+                document.getElementById('results').innerHTML = `<div class="error">请求失败：${error.message}</div>`;
+            });
+        });
+
+        // 列出表单
+        document.getElementById('list-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const city = document.getElementById('list-city').value;
+            
+            showLoading();
+            
+            fetch(`${API_BASE}/list`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ city: city || null })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                showResults(data);
+            })
+            .catch(error => {
+                hideLoading();
+                document.getElementById('results').innerHTML = `<div class="error">请求失败：${error.message}</div>`;
+            });
+        });
+
+        // 加载城市列表
+        document.getElementById('load-cities').addEventListener('click', function() {
+            showLoading();
+            
+            fetch(`${API_BASE}/cities`)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                showResults(data);
+            })
+            .catch(error => {
+                hideLoading();
+                document.getElementById('results').innerHTML = `<div class="error">请求失败：${error.message}</div>`;
+            });
+        });
+
+        // 页面加载时测试连接
+        window.onload = function() {
+            showLoading();
+            
+            fetch(`${API_BASE}/test`)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    document.getElementById('results').innerHTML = `<div class="success">本地API连接正常！${data.message}</div>`;
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                document.getElementById('results').innerHTML = `<div class="error">本地API连接失败，请先启动API服务器</div>`;
+            });
+        };
+    </script>
+</body>
+</html>

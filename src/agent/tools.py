@@ -11,12 +11,16 @@ except ImportError:
 from src.config import config
 from src.utils.logger import AgentLogger
 from src.utils.amap_rate_limiter import get_amap_rate_limiter
+from src.utils.geocode_cache import get_geocode_cache
 
 # 创建全局日志记录器（工具函数使用）
 _tool_logger = AgentLogger(verbose=True)
 
 # 获取高德地图API限流器实例
 _amap_limiter = get_amap_rate_limiter()
+
+# 获取地理编码缓存实例
+_geocode_cache = get_geocode_cache()
 
 
 @tool
@@ -38,6 +42,25 @@ def get_weather_info(city: str, date: str) -> str:
         天气信息字符串，包括温度、天气状况、降雨概率等。如果API不可用，返回提示信息。
     """
     try:
+        # ========== 优化: 日期验证（提前检查，避免无效API调用） ==========
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+            today = datetime.now().date()
+            target_date_only = target_date.date()
+            days_diff = (target_date_only - today).days
+            
+            # 提前检查：如果是过去日期，直接返回错误
+            if days_diff < 0:
+                _tool_logger.log_info(f"❌ 拒绝查询过去日期: {date} (今天: {today}, 天数差: {days_diff})")
+                return f"无法查询{city}在{date}的天气信息。该日期是过去日期（{abs(days_diff)}天前），天气API不支持查询历史天气。请选择今天或未来的日期。"
+            
+            _tool_logger.log_info(f"✅ 日期验证通过: 目标日期={date}, 今天={today}, 天数差={days_diff}")
+            
+        except ValueError as e:
+            _tool_logger.log_error(f"日期格式错误: {date}", e)
+            return f"日期格式错误：{date}。请使用 YYYY-MM-DD 格式，例如：2026-02-20"
+        # ========== 日期验证结束 ==========
+        
         # 从配置获取API密钥（高德地图，与交通API共用）
         api_key = os.getenv("AMAP_API_KEY") or config.get("transport.api_key", "") or config.get("weather.api_key", "")
         
@@ -46,46 +69,51 @@ def get_weather_info(city: str, date: str) -> str:
             _tool_logger.log_fallback("天气信息", "API密钥未配置")
             return f"无法获取{city}在{date}的天气信息。天气API密钥未配置，请在环境变量中设置AMAP_API_KEY。"
         
-        # 首先通过地理编码API获取城市编码（adcode）
-        geo_url = "https://restapi.amap.com/v3/geocode/geo"
-        geo_params = {
-            "address": city,
-            "key": api_key,
-            "output": "json"
-        }
+        # ========== 优化: 使用缓存获取地理编码 ==========
+        cached_geocode = _geocode_cache.get(city)
         
-        geo_response = _amap_limiter.get(geo_url, params=geo_params, timeout=5)
-        if geo_response.status_code != 200:
-            _tool_logger.log_api_call("高德地图地理编码API", "失败", f"HTTP {geo_response.status_code}")
-            _tool_logger.log_fallback("天气信息", f"地理编码失败")
-            return f"无法获取{city}在{date}的天气信息。地理编码API调用失败（HTTP {geo_response.status_code}），请稍后重试。"
-        
-        geo_data = geo_response.json()
-        if geo_data.get("status") != "1" or not geo_data.get("geocodes"):
-            _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到城市: {city}")
-            _tool_logger.log_fallback("天气信息", f"未找到城市")
-            return f"无法获取{city}在{date}的天气信息。未找到城市{city}，请检查城市名称是否正确。"
-        
-        # 获取城市编码（adcode）
-        adcode = geo_data["geocodes"][0].get("adcode", "")
-        city_name = geo_data["geocodes"][0].get("formatted_address", city)
-        _tool_logger.log_api_call("高德地图地理编码API", "成功", f"获取{city}的地理编码: {adcode}")
+        if cached_geocode:
+            _tool_logger.log_info(f"🎯 使用缓存的地理编码: {city}")
+            geo_data = cached_geocode
+            adcode = geo_data["geocodes"][0].get("adcode", "")
+            city_name = geo_data["geocodes"][0].get("formatted_address", city)
+        else:
+            # 首先通过地理编码API获取城市编码（adcode）
+            geo_url = "https://restapi.amap.com/v3/geocode/geo"
+            geo_params = {
+                "address": city,
+                "key": api_key,
+                "output": "json"
+            }
+            
+            geo_response = _amap_limiter.get(geo_url, params=geo_params, timeout=5)
+            if geo_response.status_code != 200:
+                _tool_logger.log_api_call("高德地图地理编码API", "失败", f"HTTP {geo_response.status_code}")
+                _tool_logger.log_fallback("天气信息", f"地理编码失败")
+                return f"无法获取{city}在{date}的天气信息。地理编码API调用失败（HTTP {geo_response.status_code}），请稍后重试。"
+            
+            geo_data = geo_response.json()
+            if geo_data.get("status") != "1" or not geo_data.get("geocodes"):
+                _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到城市: {city}")
+                _tool_logger.log_fallback("天气信息", f"未找到城市")
+                return f"无法获取{city}在{date}的天气信息。未找到城市{city}，请检查城市名称是否正确。"
+            
+            # 缓存地理编码结果
+            _geocode_cache.set(city, geo_data)
+            
+            # 获取城市编码（adcode）
+            adcode = geo_data["geocodes"][0].get("adcode", "")
+            city_name = geo_data["geocodes"][0].get("formatted_address", city)
+            _tool_logger.log_api_call("高德地图地理编码API", "成功", f"获取{city}的地理编码: {adcode}")
+        # ========== 缓存优化结束 ==========
         
         if not adcode:
             _tool_logger.log_api_call("高德地图地理编码API", "失败", "无法获取城市编码")
             _tool_logger.log_fallback("天气信息", "无法获取城市编码")
             return f"无法获取{city}在{date}的天气信息。无法获取城市编码，请检查城市名称是否正确。"
         
-        # 计算目标日期与今天的天数差
-        try:
-            target_date = datetime.strptime(date, "%Y-%m-%d")
-            today = datetime.now().date()
-            target_date_only = target_date.date()
-            days_diff = (target_date_only - today).days
-            _tool_logger.log_info(f"日期计算: 目标日期={date}, 今天={today}, 天数差={days_diff}")
-        except Exception as e:
-            days_diff = 0
-            _tool_logger.log_info(f"日期解析失败: {date}, 错误: {e}, 默认days_diff=0")
+        # 计算目标日期与今天的天数差（已在上面计算过）
+        _tool_logger.log_info(f"日期计算: 目标日期={date}, 今天={today}, 天数差={days_diff}")
         
         # 处理过去日期
         if days_diff < 0:
@@ -556,15 +584,28 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
         # 地理编码API
         geo_url = "https://restapi.amap.com/v3/geocode/geo"
         
-        # 获取出发地坐标
+        # ========== 优化: 获取出发地坐标（使用缓存） ==========
         try:
-            _tool_logger.log_info(f"请求出发地地理编码: {origin}")
-            geo_params_origin = {
-                "address": origin,
-                "key": api_key,
-                "output": "json"
-            }
-            geo_response_origin = _amap_limiter.get(geo_url, params=geo_params_origin, timeout=5)
+            # 先尝试从缓存获取
+            cached_origin = _geocode_cache.get(origin)
+            if cached_origin:
+                _tool_logger.log_info(f"🎯 使用缓存的出发地地理编码: {origin}")
+                geo_data_origin = cached_origin
+                if geo_data_origin.get("status") == "1" and geo_data_origin.get("geocodes"):
+                    location = geo_data_origin["geocodes"][0].get("location", "")
+                    if location:
+                        origin_coord = location
+                        origin_name = geo_data_origin["geocodes"][0].get("formatted_address", origin)
+            else:
+                # 缓存未命中，调用API
+                _tool_logger.log_info(f"请求出发地地理编码: {origin}")
+                geo_params_origin = {
+                    "address": origin,
+                    "key": api_key,
+                    "output": "json"
+                }
+                geo_response_origin = _amap_limiter.get(geo_url, params=geo_params_origin, timeout=5)
+                geo_response_origin = _amap_limiter.get(geo_url, params=geo_params_origin, timeout=5)
             if geo_response_origin.status_code == 200:
                 geo_data_origin = geo_response_origin.json()
                 api_status = geo_data_origin.get("status")
@@ -578,6 +619,9 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
                     else:
                         _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到出发地: {origin} (API返回: {api_info})")
                 elif api_status == "1" and geo_data_origin.get("geocodes"):
+                    # 缓存成功的结果
+                    _geocode_cache.set(origin, geo_data_origin)
+                    
                     location = geo_data_origin["geocodes"][0].get("location", "")
                     if location:
                         origin_coord = location  # 格式：经度,纬度
@@ -590,16 +634,30 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
         except Exception as e:
             # 地理编码失败，继续尝试使用地址字符串
             _tool_logger.log_api_call("高德地图地理编码API", "异常", f"{origin}: {str(e)[:100]}")
+        # ========== 出发地缓存优化结束 ==========
         
-        # 获取目的地坐标
+        # ========== 优化: 获取目的地坐标（使用缓存） ==========
         try:
-            _tool_logger.log_info(f"请求目的地地理编码: {destination}")
-            geo_params_dest = {
-                "address": destination,
-                "key": api_key,
-                "output": "json"
-            }
-            geo_response_dest = _amap_limiter.get(geo_url, params=geo_params_dest, timeout=5)
+            # 先尝试从缓存获取
+            cached_destination = _geocode_cache.get(destination)
+            if cached_destination:
+                _tool_logger.log_info(f"🎯 使用缓存的目的地地理编码: {destination}")
+                geo_data_dest = cached_destination
+                if geo_data_dest.get("status") == "1" and geo_data_dest.get("geocodes"):
+                    location = geo_data_dest["geocodes"][0].get("location", "")
+                    if location:
+                        destination_coord = location
+                        destination_name = geo_data_dest["geocodes"][0].get("formatted_address", destination)
+            else:
+                # 缓存未命中，调用API
+                _tool_logger.log_info(f"请求目的地地理编码: {destination}")
+                geo_params_dest = {
+                    "address": destination,
+                    "key": api_key,
+                    "output": "json"
+                }
+                geo_response_dest = _amap_limiter.get(geo_url, params=geo_params_dest, timeout=5)
+                geo_response_dest = _amap_limiter.get(geo_url, params=geo_params_dest, timeout=5)
             if geo_response_dest.status_code == 200:
                 geo_data_dest = geo_response_dest.json()
                 api_status = geo_data_dest.get("status")
@@ -613,6 +671,9 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
                     else:
                         _tool_logger.log_api_call("高德地图地理编码API", "失败", f"未找到目的地: {destination} (API返回: {api_info})")
                 elif api_status == "1" and geo_data_dest.get("geocodes"):
+                    # 缓存成功的结果
+                    _geocode_cache.set(destination, geo_data_dest)
+                    
                     location = geo_data_dest["geocodes"][0].get("location", "")
                     if location:
                         destination_coord = location  # 格式：经度,纬度
@@ -625,6 +686,7 @@ def _get_driving_route(origin: str, destination: str, api_key: str) -> str:
         except Exception as e:
             # 地理编码失败，继续尝试使用地址字符串
             _tool_logger.log_api_call("高德地图地理编码API", "异常", f"{destination}: {str(e)[:100]}")
+        # ========== 目的地缓存优化结束 ==========
         
         # 第二步：使用高德地图路径规划API
         route_url = "https://restapi.amap.com/v3/direction/driving"
@@ -1059,6 +1121,151 @@ def _estimate_attraction_tickets(city: str, attraction_name: Optional[str], inte
     return result
 
 
+"""
+景点数据查询工具（基于本地CSV文件，简化版）
+"""
+from typing import Optional
+from src.agent.attraction_loader_simple import AttractionDataLoader
+from src.agent.attraction_vector_store_simple import AttractionVectorStore
+
+# 创建全局实例
+_attraction_loader = None
+_attraction_vector_store = None
+
+def get_attraction_components():
+    """获取景点数据加载器和向量存储"""
+    global _attraction_loader, _attraction_vector_store
+
+    if _attraction_loader is None:
+        _attraction_loader = AttractionDataLoader(data_dir="jingdian")
+
+    if _attraction_vector_store is None:
+        _attraction_vector_store = AttractionVectorStore(_attraction_loader)
+
+    return _attraction_loader, _attraction_vector_store
+
+
+@tool
+def get_attraction_details_local(
+    city: str,
+    attraction_name: str
+) -> str:
+    """
+    获取指定景点的详细信息（基于本地CSV文件）。
+
+    Args:
+        city: 城市名称，例如"北京"、"上海"、"天津"
+        attraction_name: 景点名称，例如"故宫博物院"、"八达岭长城"
+
+    Returns:
+        景点详细信息字符串，包括地址、介绍、开放时间、门票等。
+    """
+    try:
+        # 获取景点数据加载器
+        loader, _ = get_attraction_components()
+
+        # 获取景点详情
+        attraction = loader.get_attraction_by_name(city, attraction_name)
+
+        if not attraction:
+            return f"未找到{city}的'{attraction_name}'景点。"
+
+        # 格式化详细信息
+        result = f"**{attraction.get('名字', '未知景点')}**\n\n"
+        result += f"**地址**：{attraction.get('地址', '未知')}\n\n"
+        result += f"**介绍**：\n{attraction.get('介绍', '暂无介绍')}\n\n"
+        result += f"**开放时间**：{attraction.get('开放时间', '未知')}\n\n"
+        result += f"**评分**：{attraction.get('评分', '未知')}\n\n"
+        result += f"**建议游玩时间**：{attraction.get('建议游玩时间', '未知')}\n\n"
+        result += f"**建议季节**：{attraction.get('建议季节', '未知')}\n\n"
+        result += f"**门票**：{attraction.get('门票', '未知')}\n\n"
+
+        if attraction.get('小贴士'):
+            result += f"**小贴士**：\n{attraction.get('小贴士', '')}\n\n"
+
+        return result
+
+    except Exception as e:
+        _tool_logger.log_api_call("本地景点详情", "异常", str(e)[:100])
+        return f"获取景点详情时出错：{str(e)}"
+
+
+"""
+========== RAG景点搜索工具 ==========
+使用向量数据库进行语义搜索
+"""
+
+@tool
+def search_attractions_rag(query: str, city: Optional[str] = None) -> str:
+    """
+    使用RAG技术搜索景点信息。支持自然语言查询。
+    
+    Args:
+        query: 查询描述，如"历史文化景点"、"适合亲子游"、"免费景点"
+        city: 可选，限定城市名称
+        
+    Returns:
+        景点信息的格式化字符串
+    """
+    try:
+        from src.utils.attraction_rag import get_attraction_rag
+        
+        rag = get_attraction_rag()
+        attractions = rag.search_attractions(query, city=city, k=5)
+        
+        if not attractions:
+            return f"未找到符合条件的景点：{query}" + (f"（城市：{city}）" if city else "")
+        
+        # 格式化输出
+        result = f"找到 {len(attractions)} 个相关景点：\n\n"
+        for i, attr in enumerate(attractions, 1):
+            result += f"{i}. **{attr['name']}**（{attr['city']}）\n"
+            result += f"   类型：{attr['type']}\n"
+            result += f"   评分：{attr['rating']}\n"
+            result += f"   门票：{attr['ticket']}\n"
+            result += f"   地址：{attr['address']}\n"
+            if attr.get('tags'):
+                result += f"   标签：{attr['tags']}\n"
+            result += "\n"
+        
+        _tool_logger.log_info(f"RAG搜索成功: {query}, 城市={city}, 结果数={len(attractions)}")
+        return result
+    except Exception as e:
+        _tool_logger.log_api_call("RAG景点搜索", "异常", str(e)[:100])
+        return f"查询景点时出错: {str(e)}"
+
+
+@tool
+def get_city_all_attractions_rag(city: str) -> str:
+    """
+    获取指定城市的所有景点列表（使用RAG）。
+    
+    Args:
+        city: 城市名称，如"北京"、"上海"
+        
+    Returns:
+        景点列表的格式化字符串
+    """
+    try:
+        from src.utils.attraction_rag import get_attraction_rag
+        
+        rag = get_attraction_rag()
+        attractions = rag.get_city_attractions(city, limit=20)
+        
+        if not attractions:
+            return f"未找到{city}的景点数据"
+        
+        result = f"{city}的景点列表（共{len(attractions)}个）：\n\n"
+        for i, attr in enumerate(attractions, 1):
+            result += f"{i}. {attr['name']} - {attr['type']} - 评分{attr['rating']}\n"
+        
+        _tool_logger.log_info(f"获取城市景点列表成功: {city}, 结果数={len(attractions)}")
+        return result
+    except Exception as e:
+        _tool_logger.log_api_call("RAG城市景点列表", "异常", str(e)[:100])
+        return f"获取{city}景点列表时出错: {str(e)}"
+
+
 # 所有工具列表
 TRAVEL_TOOLS = [
     get_weather_info,
@@ -1068,4 +1275,7 @@ TRAVEL_TOOLS = [
     plan_travel_itinerary,
     answer_attraction_question,
     get_personalized_recommendations,
+    get_attraction_details_local,
+    search_attractions_rag,  # 新增：RAG景点搜索
+    get_city_all_attractions_rag,  # 新增：RAG城市景点列表
 ]
