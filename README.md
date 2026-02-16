@@ -106,6 +106,7 @@ LLM-Travel-Assistant/
 │   ├── models/                   # 数据模型
 │   │   └── user.py              # 用户模型
 │   ├── utils/                    # 工具模块
+│   │   ├── attraction_rag.py    # 景点RAG管理器（向量数据库查询）
 │   │   ├── amap_rate_limiter.py # 高德地图API限流器
 │   │   └── logger.py            # 日志记录器
 │   ├── config.py                # 配置管理
@@ -117,7 +118,14 @@ LLM-Travel-Assistant/
 │   └── register.html            # 注册页面
 │
 ├── data/                        # 数据目录
-│   └── users.json               # 用户数据（Git忽略）
+│   ├── users.json               # 用户数据（Git忽略）
+│   └── vector_store/            # 向量数据库目录（Git忽略）
+│       └── attractions/         # 景点向量数据库（约2GB）
+│
+├── jingdian/                    # 景点原始数据（352个城市CSV文件）
+│   ├── 北京.csv                # 北京景点数据
+│   ├── 上海.csv                # 上海景点数据
+│   └── ...                     # 其他350个城市
 │
 ├── demos/                       # 演示文件
 │   ├── 初次查询.gif            # 演示1：初次查询演示
@@ -140,6 +148,8 @@ LLM-Travel-Assistant/
 │   └── README_AGENT_TESTS.md   # Agent测试详细说明
 │
 ├── scripts/                     # 工具脚本
+│   ├── init_attraction_db.py   # 景点向量数据库初始化脚本（完整版）
+│   ├── init_attraction_db_simple.py # 景点向量数据库初始化脚本（简化版）
 │   ├── test_weather_api.py     # 天气API测试
 │   ├── test_geocoding.py       # 地理编码测试
 │   ├── test_driving_route.py   # 自驾路线测试
@@ -389,6 +399,12 @@ python -m unittest tests.test_agent_routing.TestAgentRouting.test_weather_routin
   - 天气查询（4天预报+实况）
   - 路径规划（自驾路线精准计算）
   - 景点查询（POI搜索）
+- **RAG技术栈**：
+  - **Chroma**：向量数据库，存储景点embeddings
+  - **HuggingFace Embeddings**：文本向量化模型
+    - `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`（多语言支持）
+    - `shibing624/text2vec-base-chinese`（中文专用）
+  - **语义搜索**：基于向量相似度的景点检索
 - **Flask**：Web框架
 - **Python 3.8+**：开发语言
 - **unittest**：单元测试框架
@@ -413,6 +429,26 @@ python -m unittest tests.test_agent_routing.TestAgentRouting.test_weather_routin
 - 使用高德地图POI API获取景点信息
 - 支持按兴趣偏好筛选景点
 - 提供门票价格估算
+
+### RAG景点查询系统
+- **数据规模**：全国352个城市、33,174个景点的详细信息
+- **向量数据库**：使用Chroma存储景点embeddings，支持语义搜索
+- **Embedding模型**：
+  - 优先使用 `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`（多语言支持）
+  - 备选 `shibing624/text2vec-base-chinese`（中文专用）
+- **查询方式**：
+  - 支持自然语言查询（如"适合亲子游的地方"、"历史文化景点"）
+  - 支持城市过滤，精准定位目标城市景点
+  - 返回景点名称、地址、评分、门票、开放时间等详细信息
+- **优势**：
+  - 完全离线运行，无需API调用
+  - 语义理解能力强，能理解用户意图
+  - 响应速度快，毫秒级查询
+- **初始化**：
+  - 首次使用需运行 `python scripts/init_attraction_db_simple.py`
+  - 自动下载embedding模型（约500MB）
+  - 构建向量索引（约5-10分钟）
+  - 持久化存储，后续使用无需重新初始化
 
 ### 流式响应
 - 支持Server-Sent Events (SSE)流式响应
@@ -463,8 +499,24 @@ MIT License
 5. **API限制**：注意各API的调用频率限制，合理使用
 6. **估算数据**：当API不可用时，系统会使用智能估算，实际价格可能有所不同
 7. **限流控制**：高德地图API自动限流，每秒最多3次请求，最多3个并发
+8. **Flask自动重载**：已禁用Flask的自动重载功能（`use_reloader=False`），避免在加载sentence-transformers模型时触发服务器重启导致请求中断
 
 ## 📅 变更日志
+
+### 2026-02-16 - 配置优化与问题修复
+
+#### 🔧 配置优化
+- ✅ **环境配置文件**：添加 `env` 文件模板，简化API密钥配置流程
+- ✅ **Flask自动重载优化**：禁用Flask的自动重载功能（`use_reloader=False`），解决以下问题：
+  - 修复景点查询时加载sentence-transformers模型导致服务器重启的问题
+  - 避免首次加载大型依赖库时触发watchdog文件监控
+  - 提升开发环境稳定性，防止请求中断（network error）
+- ✅ **README更新**：完善注意事项说明，添加Flask自动重载相关说明
+
+#### 🐛 问题修复
+- ✅ **景点查询network error**：修复用户输入景点查询时前端显示network error的问题
+  - 原因：Flask debug模式的watchdog检测到模型加载时的文件变化，触发自动重启
+  - 解决：在 `app.py` 中设置 `use_reloader=False`，保留debug功能但禁用自动重载
 
 ### 2026-01-21 - Agent优化与测试完善
 
