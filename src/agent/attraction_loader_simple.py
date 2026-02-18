@@ -58,14 +58,33 @@ class AttractionDataLoader:
         return results
 
     def get_attraction_by_name(self, city: str, name: str) -> Optional[Dict]:
-        """根据名称获取景点"""
+        """根据名称获取景点（支持模糊匹配）"""
         if city not in self.attractions:
             return None
 
         attractions = self.attractions[city]
+        
+        # 首先尝试精确匹配
         for attraction in attractions:
             if attraction.get('名字') == name:
                 return attraction
+        
+        # 如果精确匹配失败，尝试模糊匹配（景点名称包含查询关键词）
+        for attraction in attractions:
+            attraction_name = attraction.get('名字', '')
+            if name in attraction_name:
+                return attraction
+        
+        # 如果还是找不到，尝试反向匹配（查询关键词包含景点名称的主要部分）
+        # 这对于用户输入完整名称但数据库中有简称的情况很有用
+        for attraction in attractions:
+            attraction_name = attraction.get('名字', '')
+            # 提取中文部分（去掉英文和特殊字符）
+            import re
+            chinese_name = re.sub(r'[a-zA-Z\s\.\-]+', '', attraction_name).strip()
+            if chinese_name and chinese_name in name:
+                return attraction
+        
         return None
 
     def get_all_attractions(self, city: str) -> List[Dict]:

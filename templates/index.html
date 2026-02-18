@@ -339,6 +339,70 @@
             line-height: 1.4;
         }
 
+        .collapsible-summary {
+            position: relative;
+        }
+
+        .preview-text {
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .toggle-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.3s;
+            margin-top: 6px;
+        }
+
+        .toggle-btn:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .toggle-icon {
+            display: inline-block;
+            transition: transform 0.3s;
+            font-size: 10px;
+        }
+
+        .toggle-btn[data-expanded="true"] .toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        .full-content {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                max-height: 0;
+            }
+            to {
+                opacity: 1;
+                max-height: 400px;
+            }
+        }
+
         .message-separator {
             margin: 12px 0;
             border: none;
@@ -1093,7 +1157,51 @@
                                         if (toolInfo) {
                                             toolInfo.element.innerHTML = `<span class="tool-status success">✓ ${data.message}</span>`;
                                             toolInfo.element.className = 'tool-update success';
-                                            if (data.summary) {
+                                            
+                                            // 处理工具输出内容
+                                            if (data.show_content && data.full_content) {
+                                                const summaryDiv = document.createElement('div');
+                                                summaryDiv.className = 'tool-summary';
+                                                
+                                                if (data.collapsible) {
+                                                    // 长内容：显示预览 + 折叠按钮
+                                                    summaryDiv.className = 'tool-summary collapsible-summary';
+                                                    const uniqueId = 'collapse-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                                                    
+                                                    const formattedPreview = data.preview
+                                                        .replace(/&/g, '&amp;')
+                                                        .replace(/</g, '&lt;')
+                                                        .replace(/>/g, '&gt;')
+                                                        .replace(/\n/g, '<br>');
+                                                    
+                                                    const formattedContent = data.full_content
+                                                        .replace(/&/g, '&amp;')
+                                                        .replace(/</g, '&lt;')
+                                                        .replace(/>/g, '&gt;')
+                                                        .replace(/\n/g, '<br>');
+                                                    
+                                                    summaryDiv.innerHTML = `
+                                                        <div class="preview-text">${formattedPreview}</div>
+                                                        <button class="toggle-btn" onclick="toggleContent('${uniqueId}')" data-expanded="false">
+                                                            <span class="toggle-icon">▼</span> 展开完整内容
+                                                        </button>
+                                                        <div class="full-content" id="${uniqueId}" style="display: none;">
+                                                            ${formattedContent}
+                                                        </div>
+                                                    `;
+                                                } else {
+                                                    // 短内容：直接显示完整内容
+                                                    const formattedContent = data.full_content
+                                                        .replace(/&/g, '&amp;')
+                                                        .replace(/</g, '&lt;')
+                                                        .replace(/>/g, '&gt;')
+                                                        .replace(/\n/g, '<br>');
+                                                    
+                                                    summaryDiv.innerHTML = `<div class="preview-text">${formattedContent}</div>`;
+                                                }
+                                                
+                                                toolInfo.element.appendChild(summaryDiv);
+                                            } else if (data.summary) {
                                                 const summaryDiv = document.createElement('div');
                                                 summaryDiv.className = 'tool-summary';
                                                 summaryDiv.textContent = data.summary;
@@ -1507,7 +1615,51 @@
                                         if (toolInfo) {
                                             toolInfo.element.innerHTML = `<span class="tool-status success">✓ ${data.message}</span>`;
                                             toolInfo.element.className = 'tool-update success';
-                                            if (data.summary) {
+                                            
+                                            // 处理工具输出内容
+                                            if (data.show_content && data.full_content) {
+                                                const summaryDiv = document.createElement('div');
+                                                summaryDiv.className = 'tool-summary';
+                                                
+                                                if (data.collapsible) {
+                                                    // 长内容：显示预览 + 折叠按钮
+                                                    summaryDiv.className = 'tool-summary collapsible-summary';
+                                                    const uniqueId = 'collapse-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                                                    
+                                                    const formattedPreview = data.preview
+                                                        .replace(/&/g, '&amp;')
+                                                        .replace(/</g, '&lt;')
+                                                        .replace(/>/g, '&gt;')
+                                                        .replace(/\n/g, '<br>');
+                                                    
+                                                    const formattedContent = data.full_content
+                                                        .replace(/&/g, '&amp;')
+                                                        .replace(/</g, '&lt;')
+                                                        .replace(/>/g, '&gt;')
+                                                        .replace(/\n/g, '<br>');
+                                                    
+                                                    summaryDiv.innerHTML = `
+                                                        <div class="preview-text">${formattedPreview}</div>
+                                                        <button class="toggle-btn" onclick="toggleContent('${uniqueId}')" data-expanded="false">
+                                                            <span class="toggle-icon">▼</span> 展开完整内容
+                                                        </button>
+                                                        <div class="full-content" id="${uniqueId}" style="display: none;">
+                                                            ${formattedContent}
+                                                        </div>
+                                                    `;
+                                                } else {
+                                                    // 短内容：直接显示完整内容
+                                                    const formattedContent = data.full_content
+                                                        .replace(/&/g, '&amp;')
+                                                        .replace(/</g, '&lt;')
+                                                        .replace(/>/g, '&gt;')
+                                                        .replace(/\n/g, '<br>');
+                                                    
+                                                    summaryDiv.innerHTML = `<div class="preview-text">${formattedContent}</div>`;
+                                                }
+                                                
+                                                toolInfo.element.appendChild(summaryDiv);
+                                            } else if (data.summary) {
                                                 const summaryDiv = document.createElement('div');
                                                 summaryDiv.className = 'tool-summary';
                                                 summaryDiv.textContent = data.summary;
@@ -1653,6 +1805,28 @@
 
         // 页面加载时立即检查登录状态（在DOMContentLoaded之前）
         checkLoginStatus();
+        
+        // 展开/折叠内容的函数
+        function toggleContent(id) {
+            const content = document.getElementById(id);
+            const button = document.querySelector(`button[onclick="toggleContent('${id}')"]`);
+            
+            if (!content || !button) return;
+            
+            const isExpanded = button.getAttribute('data-expanded') === 'true';
+            
+            if (isExpanded) {
+                // 折叠
+                content.style.display = 'none';
+                button.setAttribute('data-expanded', 'false');
+                button.innerHTML = '<span class="toggle-icon">▼</span> 展开完整内容';
+            } else {
+                // 展开
+                content.style.display = 'block';
+                button.setAttribute('data-expanded', 'true');
+                button.innerHTML = '<span class="toggle-icon">▼</span> 收起内容';
+            }
+        }
         
         // 最终备用初始化方案：延迟执行，确保DOM完全加载
         setTimeout(function() {

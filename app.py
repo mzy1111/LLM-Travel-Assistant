@@ -223,17 +223,31 @@ def chat_stream():
             def __init__(self, result_queue):
                 self.result_queue = result_queue
                 self.current_tool = None
+                # 需要过滤的工具（不显示中间过程）
+                self.filtered_tools = [
+                    'search_attractions_rag',
+                    'get_city_all_attractions_rag',
+                    'get_attraction_details_local'
+                ]
                 
             def on_agent_action(self, action: AgentAction, **kwargs) -> None:
                 """工具调用开始"""
                 tool_name = action.tool
+                self.current_tool = tool_name
+                
+                # 如果是需要过滤的工具，不发送通知
+                if tool_name in self.filtered_tools:
+                    return
+                
                 tool_names = {
                     "query_weather_agent": "天气查询",
                     "query_transport_agent": "交通路线",
                     "query_hotel_agent": "酒店价格",
                     "query_attraction_agent": "景点信息",
                     "query_planning_agent": "行程规划",
-                    "query_recommendation_agent": "个性化推荐"
+                    "query_recommendation_agent": "个性化推荐",
+                    "get_transport_route": "交通路线",
+                    "get_attraction_ticket_prices": "景点门票"
                 }
                 friendly_name = tool_names.get(tool_name, tool_name)
                 self.result_queue.put({
@@ -241,27 +255,39 @@ def chat_stream():
                     'tool': tool_name,
                     'message': f'正在查询{friendly_name}...'
                 })
-                self.current_tool = tool_name
                 
             def on_tool_end(self, output: str, **kwargs) -> None:
                 """工具执行完成"""
                 if self.current_tool:
+                    # 如果是需要过滤的工具，不发送通知
+                    if self.current_tool in self.filtered_tools:
+                        self.current_tool = None
+                        return
+                    
                     tool_names = {
                         "query_weather_agent": "天气",
                         "query_transport_agent": "交通路线",
                         "query_hotel_agent": "酒店价格",
                         "query_attraction_agent": "景点信息",
                         "query_planning_agent": "行程规划",
-                        "query_recommendation_agent": "推荐"
+                        "query_recommendation_agent": "推荐",
+                        "get_transport_route": "交通路线",
+                        "get_attraction_ticket_prices": "景点门票"
                     }
                     friendly_name = tool_names.get(self.current_tool, self.current_tool)
-                    # 简化输出，只显示前200字符
-                    summary = output[:200] + "..." if len(output) > 200 else output
+                    
+                    # 始终提供完整输出，让前端决定如何显示
+                    is_long = len(output) > 200
+                    preview = output[:200] + "..." if is_long else output
+                    
                     self.result_queue.put({
                         'type': 'tool_end',
                         'tool': self.current_tool,
                         'message': f'✓ {friendly_name}查询完成',
-                        'summary': summary
+                        'preview': preview,  # 简略预览（前200字符）
+                        'full_content': output,  # 完整内容
+                        'collapsible': is_long,  # 是否可折叠
+                        'show_content': True  # 始终显示内容
                     })
                     self.current_tool = None
         
@@ -512,17 +538,31 @@ def generate_plan_stream():
             def __init__(self, result_queue):
                 self.result_queue = result_queue
                 self.current_tool = None
+                # 需要过滤的工具（不显示中间过程）
+                self.filtered_tools = [
+                    'search_attractions_rag',
+                    'get_city_all_attractions_rag',
+                    'get_attraction_details_local'
+                ]
                 
             def on_agent_action(self, action: AgentAction, **kwargs) -> None:
                 """工具调用开始"""
                 tool_name = action.tool
+                self.current_tool = tool_name
+                
+                # 如果是需要过滤的工具，不发送通知
+                if tool_name in self.filtered_tools:
+                    return
+                
                 tool_names = {
                     "query_weather_agent": "天气查询",
                     "query_transport_agent": "交通路线",
                     "query_hotel_agent": "酒店价格",
                     "query_attraction_agent": "景点信息",
                     "query_planning_agent": "行程规划",
-                    "query_recommendation_agent": "个性化推荐"
+                    "query_recommendation_agent": "个性化推荐",
+                    "get_transport_route": "交通路线",
+                    "get_attraction_ticket_prices": "景点门票"
                 }
                 friendly_name = tool_names.get(tool_name, tool_name)
                 self.result_queue.put({
@@ -530,26 +570,39 @@ def generate_plan_stream():
                     'tool': tool_name,
                     'message': f'正在查询{friendly_name}...'
                 })
-                self.current_tool = tool_name
                 
             def on_tool_end(self, output: str, **kwargs) -> None:
                 """工具执行完成"""
                 if self.current_tool:
+                    # 如果是需要过滤的工具，不发送通知
+                    if self.current_tool in self.filtered_tools:
+                        self.current_tool = None
+                        return
+                    
                     tool_names = {
                         "query_weather_agent": "天气",
                         "query_transport_agent": "交通路线",
                         "query_hotel_agent": "酒店价格",
                         "query_attraction_agent": "景点信息",
                         "query_planning_agent": "行程规划",
-                        "query_recommendation_agent": "推荐"
+                        "query_recommendation_agent": "推荐",
+                        "get_transport_route": "交通路线",
+                        "get_attraction_ticket_prices": "景点门票"
                     }
                     friendly_name = tool_names.get(self.current_tool, self.current_tool)
-                    summary = output[:200] + "..." if len(output) > 200 else output
+                    
+                    # 始终提供完整输出，让前端决定如何显示
+                    is_long = len(output) > 200
+                    preview = output[:200] + "..." if is_long else output
+                    
                     self.result_queue.put({
                         'type': 'tool_end',
                         'tool': self.current_tool,
                         'message': f'✓ {friendly_name}查询完成',
-                        'summary': summary
+                        'preview': preview,  # 简略预览（前200字符）
+                        'full_content': output,  # 完整内容
+                        'collapsible': is_long,  # 是否可折叠
+                        'show_content': True  # 始终显示内容
                     })
                     self.current_tool = None
         

@@ -389,6 +389,9 @@ def plan_travel_itinerary(
     Returns:
         详细的行程规划提示，包含交通路线（距离、时间、费用）、天气、酒店价格和景点门票信息
     """
+    # 提取实际费用信息用于预算检查
+    actual_costs = {}
+    
     # 构建行程规划提示
     plan_prompt = f"""请为以下需求规划旅行行程：
 
@@ -402,6 +405,14 @@ def plan_travel_itinerary(
     if existing_transport_info:
         plan_prompt += f"\n【重要】自驾路线信息（距离、时间、费用）：\n{existing_transport_info}\n"
         plan_prompt += "\n注意：请基于上述实际距离和时间来安排行程，而不是估算。\n"
+        # 提取交通费用
+        try:
+            import re
+            match = re.search(r'总费用估算[：:]\s*(\d+)元', existing_transport_info)
+            if match:
+                actual_costs['transport'] = float(match.group(1))
+        except:
+            pass
     elif departure_city and destination:
         # 默认使用自驾方式
         transport_mode_to_use = transport_mode if transport_mode == "自驾" else "自驾"
@@ -413,6 +424,14 @@ def plan_travel_itinerary(
             })
             plan_prompt += f"\n【重要】自驾路线信息（距离、时间、费用）：\n{transport_info}\n"
             plan_prompt += "\n注意：请基于上述实际距离和时间来安排行程，而不是估算。\n"
+            # 提取交通费用
+            try:
+                import re
+                match = re.search(r'总费用估算[：:]\s*(\d+)元', transport_info)
+                if match:
+                    actual_costs['transport'] = float(match.group(1))
+            except:
+                pass
         except Exception as e:
             plan_prompt += f"\n警告：无法获取自驾路线信息（{str(e)}），将使用估算值。\n"
     elif departure_city or destination:
@@ -433,6 +452,15 @@ def plan_travel_itinerary(
     # **优先使用已查询的酒店信息，如果没有则查询**
     if existing_hotel_info:
         plan_prompt += f"\n酒店价格信息：\n{existing_hotel_info}\n"
+        # 提取酒店单价
+        try:
+            import re
+            match = re.search(r'价格范围[：:]\s*(\d+)-(\d+)元/晚', existing_hotel_info)
+            if match:
+                # 使用平均价格
+                actual_costs['hotel_per_night'] = (float(match.group(1)) + float(match.group(2))) / 2
+        except:
+            pass
     elif destination and hotel_preference and departure_date and return_date:
         try:
             hotel_info = get_hotel_prices.invoke({
@@ -442,6 +470,15 @@ def plan_travel_itinerary(
                 "hotel_preference": hotel_preference
             })
             plan_prompt += f"\n酒店价格信息：\n{hotel_info}\n"
+            # 提取酒店单价
+            try:
+                import re
+                match = re.search(r'价格范围[：:]\s*(\d+)-(\d+)元/晚', hotel_info)
+                if match:
+                    # 使用平均价格
+                    actual_costs['hotel_per_night'] = (float(match.group(1)) + float(match.group(2))) / 2
+            except:
+                pass
         except:
             pass
     elif hotel_preference and departure_date and return_date and not destination:
@@ -450,6 +487,17 @@ def plan_travel_itinerary(
     # **优先使用已查询的景点信息，如果没有则查询**
     if existing_attraction_info:
         plan_prompt += f"\n景点门票信息：\n{existing_attraction_info}\n"
+        # 提取景点门票总费用
+        try:
+            import re
+            # 查找所有"人均消费：XX元"的模式
+            matches = re.findall(r'人均消费[：:]\s*(\d+)元', existing_attraction_info)
+            if matches:
+                # 计算总费用（假设每个景点都去）
+                total_attraction_cost = sum(float(m) for m in matches)
+                actual_costs['attraction_total'] = total_attraction_cost
+        except:
+            pass
     elif destination and interests:
         try:
             attraction_info = get_attraction_ticket_prices.invoke({
@@ -458,10 +506,39 @@ def plan_travel_itinerary(
                 "interests": interests
             })
             plan_prompt += f"\n景点门票信息：\n{attraction_info}\n"
+            # 提取景点门票总费用
+            try:
+                import re
+                # 查找所有"人均消费：XX元"的模式
+                matches = re.findall(r'人均消费[：:]\s*(\d+)元', attraction_info)
+                if matches:
+                    # 计算总费用（假设每个景点都去）
+                    total_attraction_cost = sum(float(m) for m in matches)
+                    actual_costs['attraction_total'] = total_attraction_cost
+            except:
+                pass
         except:
             pass
     elif interests and not destination:
         plan_prompt += "\n提示：已提供兴趣偏好，但缺少目的地，无法查询具体景点门票。建议根据兴趣偏好推荐相关类型的景点。\n"
+    
+    # 如果有预算且有实际费用信息，进行预算检查
+    if budget and actual_costs and departure_date and return_date:
+        try:
+            from src.utils.budget_checker import check_budget
+            travel_info_for_check = {
+                'budget': budget,
+                'departureDate': departure_date,
+                'returnDate': return_date,
+                'departureCity': departure_city,
+                'destination': destination,
+                'hotelPreference': hotel_preference
+            }
+            is_feasible, budget_message, breakdown = check_budget(travel_info_for_check, actual_costs)
+            if budget_message:
+                plan_prompt += f"\n【预算分析】（基于实际查询的费用）：\n{budget_message}\n"
+        except Exception as e:
+            _tool_logger.log_info(f"预算检查失败: {str(e)}")
     
     plan_prompt += """
 请提供详细的每日行程安排，包括：
@@ -1147,15 +1224,18 @@ def get_attraction_components():
 
 @tool
 def get_attraction_details_local(
-    city: str,
-    attraction_name: str
+    attraction_name: str,
+    city: Optional[str] = None
 ) -> str:
     """
     获取指定景点的详细信息（基于本地CSV文件）。
-
+    
+    重要提示：当用户询问某个景点时，请从用户的问题中提取景点名称。
+    例如："圣索菲亚大教堂介绍一下" -> attraction_name="圣索菲亚大教堂"
+    
     Args:
-        city: 城市名称，例如"北京"、"上海"、"天津"
-        attraction_name: 景点名称，例如"故宫博物院"、"八达岭长城"
+        attraction_name: 景点名称（必填），例如"故宫博物院"、"八达岭长城"、"圣索菲亚大教堂"
+        city: 城市名称（可选），例如"北京"、"上海"、"哈尔滨"。如果不提供，将在所有城市中搜索。
 
     Returns:
         景点详细信息字符串，包括地址、介绍、开放时间、门票等。
@@ -1165,13 +1245,31 @@ def get_attraction_details_local(
         loader, _ = get_attraction_components()
 
         # 获取景点详情
-        attraction = loader.get_attraction_by_name(city, attraction_name)
-
-        if not attraction:
-            return f"未找到{city}的'{attraction_name}'景点。"
+        if city:
+            # 如果提供了城市，在指定城市中搜索
+            attraction = loader.get_attraction_by_name(city, attraction_name)
+            if not attraction:
+                return f"未找到{city}的'{attraction_name}'景点。请检查景点名称是否正确，或尝试不指定城市进行搜索。"
+        else:
+            # 如果没有提供城市，在所有城市中搜索
+            all_cities = loader.get_cities()
+            attraction = None
+            found_city = None
+            
+            for search_city in all_cities:
+                attraction = loader.get_attraction_by_name(search_city, attraction_name)
+                if attraction:
+                    found_city = search_city
+                    break
+            
+            if not attraction:
+                return f"未找到'{attraction_name}'景点。请检查景点名称是否正确，或提供城市名称以缩小搜索范围。"
+            
+            # 更新city变量用于后续显示
+            city = found_city
 
         # 格式化详细信息
-        result = f"**{attraction.get('名字', '未知景点')}**\n\n"
+        result = f"**{attraction.get('名字', '未知景点')}**（{city}）\n\n"
         result += f"**地址**：{attraction.get('地址', '未知')}\n\n"
         result += f"**介绍**：\n{attraction.get('介绍', '暂无介绍')}\n\n"
         result += f"**开放时间**：{attraction.get('开放时间', '未知')}\n\n"

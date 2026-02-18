@@ -61,12 +61,16 @@ class BudgetChecker:
         return hotel_map.get(hotel_type, BudgetChecker.MIN_HOTEL_COMFORT)
     
     @classmethod
-    def check_budget_feasibility(cls, travel_info: Dict) -> Tuple[bool, str, Dict]:
+    def check_budget_feasibility(cls, travel_info: Dict, actual_costs: Dict = None) -> Tuple[bool, str, Dict]:
         """
         检查预算是否可行
         
         Args:
             travel_info: 旅行信息字典
+            actual_costs: 实际费用信息（可选），包含：
+                - transport: 实际交通费用
+                - hotel_per_night: 实际酒店单价
+                - attraction_total: 实际景点门票总费用
             
         Returns:
             (是否可行, 提示信息, 费用明细)
@@ -85,12 +89,18 @@ class BudgetChecker:
             # 计算天数
             days = cls.calculate_days(departure_date, return_date)
             
-            # 估算最低费用
-            min_transport = cls.estimate_min_transport(origin, destination)
-            min_hotel_per_night = cls.estimate_min_hotel(hotel_type)
+            # 使用实际费用或估算最低费用
+            if actual_costs:
+                min_transport = actual_costs.get('transport', cls.estimate_min_transport(origin, destination))
+                min_hotel_per_night = actual_costs.get('hotel_per_night', cls.estimate_min_hotel(hotel_type))
+                min_attraction = actual_costs.get('attraction_total', cls.MIN_ATTRACTION_PER_DAY * days)
+            else:
+                min_transport = cls.estimate_min_transport(origin, destination)
+                min_hotel_per_night = cls.estimate_min_hotel(hotel_type)
+                min_attraction = cls.MIN_ATTRACTION_PER_DAY * days
+            
             min_hotel_total = min_hotel_per_night * max(0, days - 1)  # 最后一天不住酒店
             min_food = cls.MIN_FOOD_PER_DAY * days
-            min_attraction = cls.MIN_ATTRACTION_PER_DAY * days
             
             min_total = min_transport + min_hotel_total + min_food + min_attraction
             
@@ -103,11 +113,15 @@ class BudgetChecker:
                 'attraction': min_attraction,
                 'total': min_total,
                 'budget': budget,
-                'surplus': budget - min_total
+                'surplus': budget - min_total,
+                'using_actual_costs': bool(actual_costs)  # 标记是否使用了实际费用
             }
             
             # 判断是否可行（预留20%缓冲）
             recommended_budget = min_total * 1.2
+            
+            # 构建费用说明（区分估算和实际）
+            cost_type = "实际查询" if actual_costs else "最低估算"
             
             if budget < min_total:
                 message = (
@@ -115,11 +129,11 @@ class BudgetChecker:
                     f"您的预算：{budget:.0f}元\n"
                     f"最低预算：{min_total:.0f}元\n"
                     f"预算缺口：{min_total - budget:.0f}元\n\n"
-                    f"费用明细（最低估算）：\n"
+                    f"费用明细（{cost_type}）：\n"
                     f"- 交通费用：{min_transport:.0f}元\n"
                     f"- 住宿费用：{min_hotel_total:.0f}元（{max(0, days-1)}晚 × {min_hotel_per_night:.0f}元）\n"
                     f"- 餐饮费用：{min_food:.0f}元（{days}天 × {cls.MIN_FOOD_PER_DAY}元）\n"
-                    f"- 景点费用：{min_attraction:.0f}元（{days}天 × {cls.MIN_ATTRACTION_PER_DAY}元）\n\n"
+                    f"- 景点费用：{min_attraction:.0f}元（{days}天）\n\n"
                     f"建议：\n"
                     f"1. 增加预算至 {recommended_budget:.0f}元 以上\n"
                     f"2. 选择更近的目的地以降低交通费用\n"
@@ -132,29 +146,33 @@ class BudgetChecker:
                 message = (
                     f"💡 预算提示\n\n"
                     f"您的预算：{budget:.0f}元\n"
-                    f"最低预算：{min_total:.0f}元\n"
+                    f"最低预算：{min_total:.0f}元（{cost_type}）\n"
                     f"建议预算：{recommended_budget:.0f}元\n\n"
                     f"您的预算刚好够用，但建议增加预算以获得更好的旅行体验。"
                 )
                 return True, message, breakdown
             
             else:
-                message = f"✅ 预算充足（预算：{budget:.0f}元，最低需求：{min_total:.0f}元）"
+                message = f"✅ 预算充足（预算：{budget:.0f}元，最低需求：{min_total:.0f}元，{cost_type}）"
                 return True, message, breakdown
                 
         except Exception as e:
             return True, f"预算检查失败：{str(e)}", {}
 
 
-def check_budget(travel_info: Dict) -> Tuple[bool, str, Dict]:
+def check_budget(travel_info: Dict, actual_costs: Dict = None) -> Tuple[bool, str, Dict]:
     """
     便捷函数：检查预算是否可行
     
     Args:
         travel_info: 旅行信息字典
+        actual_costs: 实际费用信息（可选），包含：
+            - transport: 实际交通费用
+            - hotel_per_night: 实际酒店单价
+            - attraction_total: 实际景点门票总费用
         
     Returns:
         (是否可行, 提示信息, 费用明细)
     """
-    return BudgetChecker.check_budget_feasibility(travel_info)
+    return BudgetChecker.check_budget_feasibility(travel_info, actual_costs)
 
